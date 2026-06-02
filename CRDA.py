@@ -69,10 +69,13 @@ def load_and_clean_data(file_bytes, file_name):
     # 1. READ THE FILE
     try:
         if file_ext == 'csv':
+            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
             df = pd.read_csv(file_object)
         elif file_ext in ['xls', 'xlsx']:
+            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
             df = pd.read_excel(file_object)
         elif file_ext == 'pdf':
+            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
             with pdfplumber.open(file_object) as pdf:
                 all_tables = []
                 for page in pdf.pages:
@@ -363,7 +366,7 @@ with tab4:
     col_t1, col_t2 = st.columns(2)
     
     with col_t1:
-        st.warning(f"**🤖 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
+        st.warning(f"**🍋 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
         if 'Serial No.' in df.columns and 'Date/Time Opened' in df.columns:
             df_sort = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
             df_sort['Days_Since_Last'] = df_sort.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
@@ -375,7 +378,7 @@ with tab4:
     with col_t2:
         st.error("**🚨 Network Friction Events:** Single incidents causing **>24 Hours** of operational downtime.")
         if 'Actual Down Time Hours' in df.columns:
-            # FIX applied here: fillna(0) to ensure boolean masking works without NaN errors
+            # FIX: fillna(0) ensures boolean masking works without NaN errors
             severe_mask = df['Actual Down Time Hours'].fillna(0) >= 24.0
             severe_df = df[severe_mask].sort_values('Actual Down Time Hours', ascending=False)
             
@@ -385,26 +388,23 @@ with tab4:
     st.markdown("---")
     st.subheader("🔍 Complete Serial Number Uptime Matrix")
     
-    # 1. Bulletproof Groupby (prevents dropping NaNs and handles empty filtered data gracefully)
+    # Bulletproof Groupby (prevents dropping NaNs and handles empty filtered data gracefully)
     if all(col in df.columns for col in ['Serial No.', 'Site Name', 'Family/Line: Name', 'Case Number', 'Actual Down Time Hours']):
         serial_df = df.groupby(['Serial No.', 'Site Name', 'Family/Line: Name'], dropna=False).agg({
             'Case Number': 'count', 
             'Actual Down Time Hours': 'sum'
         }).reset_index()
         
-        # 2. Safely rename the columns
         serial_df.rename(columns={
             'Case Number': 'Total_Cases', 
             'Actual Down Time Hours': 'Down_Hours'
         }, inplace=True)
 
-        # 3. Safety Check: Only sort and style if there is actual data to display
         if not serial_df.empty:
             serial_df['Uptime %'] = ((total_timeline_hours - serial_df['Down_Hours']) / total_timeline_hours) * 100
             serial_df = serial_df.sort_values('Total_Cases', ascending=False)
 
             def highlight_low(row):
-                # Added pd.notnull check to prevent errors on completely blank rows
                 color = 'background-color: rgba(225, 87, 89, 0.15)' if pd.notnull(row['Uptime %']) and row['Uptime %'] < 95.0 else ''
                 return [color] * len(row)
 
