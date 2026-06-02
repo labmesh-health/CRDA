@@ -75,7 +75,102 @@ CORP_ORANGE = '#F28E2B'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
-# 2. SIDEBAR INGESTION VALIDATION BOUNDARY
+# 2. DYNAMIC GEODOCING RECTORY DIRECTORY
+# ==========================================
+@st.cache_data(show_spinner=False)
+def geocode_cities(city_list):
+    import requests
+    directory = {
+        'BANGALORE': {'lat': 12.9716, 'lon': 77.5946},
+        'BENGALURU': {'lat': 12.9716, 'lon': 77.5946},
+        'MUMBAI': {'lat': 19.0760, 'lon': 72.8777},
+        'DELHI': {'lat': 28.7041, 'lon': 77.1025},
+        'NEW DELHI': {'lat': 28.6139, 'lon': 77.2090},
+        'CHENNAI': {'lat': 13.0827, 'lon': 80.2707},
+        'HYDERABAD': {'lat': 17.3850, 'lon': 78.4867},
+        'KOLKATA': {'lat': 22.5726, 'lon': 88.3639},
+        'PUNE': {'lat': 18.5204, 'lon': 73.8567},
+        'AHMEDABAD': {'lat': 23.0225, 'lon': 72.5714},
+        'JAIPUR': {'lat': 26.9124, 'lon': 75.7873},
+        'COIMBATORE': {'lat': 11.0168, 'lon': 76.9558},
+        'KOCHI': {'lat': 9.9312, 'lon': 76.2673},
+        'THANE': {'lat': 19.2183, 'lon': 72.9781},
+        'NAGPUR': {'lat': 21.1458, 'lon': 79.0882},
+        'INDORE': {'lat': 22.7196, 'lon': 75.8577},
+        'BHOPAL': {'lat': 23.2599, 'lon': 77.4126},
+        'PATNA': {'lat': 25.5941, 'lon': 85.1376},
+        'VADODARA': {'lat': 22.3072, 'lon': 73.1812},
+        'GHAZIABAD': {'lat': 28.6692, 'lon': 77.4538},
+        'LUDHIANA': {'lat': 30.9010, 'lon': 75.8573},
+        'AGRA': {'lat': 27.1767, 'lon': 78.0081},
+        'NASHIK': {'lat': 19.9975, 'lon': 73.7898},
+        'FARIDABAD': {'lat': 28.4089, 'lon': 77.3178},
+        'MEERUT': {'lat': 28.9845, 'lon': 77.7064},
+        'RAJKOT': {'lat': 22.3039, 'lon': 70.8022},
+        'SURAT': {'lat': 21.1702, 'lon': 72.8311},
+        'VISAKHAPATNAM': {'lat': 17.6868, 'lon': 83.2185},
+        'VIJAYAWADA': {'lat': 16.5062, 'lon': 80.6480},
+        'GUNTUR': {'lat': 16.3067, 'lon': 80.4365},
+        'NELLORE': {'lat': 14.4426, 'lon': 79.9865},
+        'GUWAHATI': {'lat': 26.1445, 'lon': 91.7362},
+        'MYSORE': {'lat': 12.2958, 'lon': 76.6394},
+        'MANGALORE': {'lat': 12.9141, 'lon': 74.8560},
+        'HUBLI': {'lat': 15.3647, 'lon': 75.1240},
+        'BELGAUM': {'lat': 15.8497, 'lon': 74.4977},
+        'TRIVANDRUM': {'lat': 8.5241, 'lon': 76.9366},
+        'CALICUT': {'lat': 11.2588, 'lon': 75.7804},
+        'RANCHI': {'lat': 23.3441, 'lon': 85.3096},
+        'JAMSHEDPUR': {'lat': 22.8046, 'lon': 86.2029},
+        'DHANBAD': {'lat': 23.7957, 'lon': 86.4304},
+        'RAIPUR': {'lat': 21.2514, 'lon': 81.6296},
+        'BILASPUR': {'lat': 22.0790, 'lon': 82.1391},
+        'DEHRADUN': {'lat': 30.3165, 'lon': 78.0322},
+        'HARIDWAR': {'lat': 29.9457, 'lon': 78.1642},
+        'ROORKEE': {'lat': 29.8543, 'lon': 77.8880},
+        'SHIMLA': {'lat': 31.1048, 'lon': 77.1734},
+        'SRINAGAR': {'lat': 34.0837, 'lon': 74.7973},
+        'JAMMU': {'lat': 32.7266, 'lon': 74.8570},
+        'AMRITSAR': {'lat': 31.6340, 'lon': 74.8723},
+        'JALANDHAR': {'lat': 31.3260, 'lon': 75.5762},
+        'WARANGAL': {'lat': 17.9689, 'lon': 79.5941},
+        'AURANGABAD': {'lat': 19.8762, 'lon': 75.3433},
+        'SOLAPUR': {'lat': 17.6599, 'lon': 75.9064},
+        'KOLHAPUR': {'lat': 16.7050, 'lon': 74.2433},
+        'JODHPUR': {'lat': 26.2389, 'lon': 73.0243},
+        'UDAIPUR': {'lat': 24.5854, 'lon': 73.7125},
+        'KOTA': {'lat': 25.2138, 'lon': 75.8648},
+        'GWALIOR': {'lat': 26.2183, 'lon': 78.1828},
+        'JABALPUR': {'lat': 23.1815, 'lon': 79.9864},
+        'TRICHY': {'lat': 10.7905, '8.7047': 78.7047},
+        'SALEM': {'lat': 11.6643, 'lon': 78.1460},
+        'MADURAI': {'lat': 9.9252, 'lon': 78.1198},
+        'VARANASI': {'lat': 25.3176, 'lon': 82.9739},
+        'KANPUR': {'lat': 26.4499, 'lon': 80.3319},
+    }
+    
+    coordinates = {}
+    for city in city_list:
+        if pd.isna(city) or not str(city).strip():
+            continue
+        clean_name = str(city).strip().upper()
+        if clean_name in directory:
+            coordinates[city] = directory[clean_name]
+            continue
+        try:
+            url = f"https://nominatim.openstreetmap.org/search?q={city}&format=json&limit=1"
+            headers = {'User-Agent': 'RocheCobasFleetDashboard/1.0'}
+            res = requests.get(url, headers=headers, timeout=3).json()
+            if res:
+                coordinates[city] = {
+                    'lat': float(res[0]['lat']),
+                    'lon': float(res[0]['lon'])
+                }
+        except:
+            pass
+    return coordinates
+
+# ==========================================
+# 3. SIDEBAR INGESTION VALIDATION BOUNDARY
 # ==========================================
 st.sidebar.header("📁 Data Ingestion")
 uploaded_file = st.sidebar.file_uploader("Upload Network Service Log", type=["csv", "xlsx", "xls", "pdf"])
@@ -127,7 +222,7 @@ def load_and_clean_data(file_bytes, file_name):
         df['System Down Yes/No'] = 'Unknown'
 
     # ===================================================
-    # 3. DIRECT LOGICAL KEYWORD MAPPING MATRIX (NO NLP)
+    # 4. DIRECT LOGICAL KEYWORD MAPPING MATRIX (NO NLP)
     # ===================================================
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
@@ -220,7 +315,7 @@ def load_and_clean_data(file_bytes, file_name):
 
 
 # ==========================================
-# 4. CONDITIONAL APPLICATION EXECUTION
+# 5. CONDITIONAL APPLICATION EXECUTION
 # ==========================================
 if uploaded_file is None:
     st.info("👋 Welcome! Please upload your network service log (CSV, Excel, or PDF) in the sidebar to populate the diagnostic command views.")
@@ -315,7 +410,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- TARGETED AND EXPANDED DIRECT ROW/CASE CALCULATIONS ---
+            # --- TARGETED AND EXPANDED DIRECT ROW/CASE ID CALCULATIONS ---
             if not df.empty:
                 # Trace the exact high-downtime data row index to uncover granular case parameters
                 max_down_idx = df['Actual Down Time Hours'].idxmax()
@@ -349,9 +444,15 @@ else:
                     pointed_serial_hours = serial_downtime.loc[critical_idx, 'Actual Down Time Hours']
                 else:
                     critical_impact_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", 0
+                    
+                if 'City' in df.columns:
+                    top_city_series = df['City'].dropna().mode()
+                    pointed_top_city = top_city_series[0] if not top_city_series.empty else "N/A"
+                else:
+                    pointed_top_city = "N/A"
             else:
                 critical_case_number, critical_case_hours, critical_case_site, critical_case_model, critical_case_hardware_issue = "N/A", 0, "N/A", "N/A", "N/A"
-                pointed_top_part, pointed_top_app, leading_friction_model, critical_impact_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", "N/A", "N/A", "N/A", 0
+                pointed_top_part, pointed_top_app, leading_friction_model, critical_impact_serial, pointed_serial_site, pointed_serial_hours, pointed_top_city = "N/A", "N/A", "N/A", "N/A", "N/A", 0, "N/A"
 
             severe_outliers_count = len(df[df['Actual Down Time Hours'].fillna(0) >= 24.0])
             env_stress_count = len(df[df['Env_Flag'] == True])
@@ -371,7 +472,7 @@ else:
                 with col_b1:
                     st.markdown(f"""
                     <div class='bullet-point'><strong>🏢 Most Critical Network Friction Event:</strong> Case ID <strong>{critical_case_number}</strong> recorded at <em>{critical_case_site}</em> represents the single largest individual disruption across the network. This case involved a <strong>{critical_case_model}</strong> platform that suffered <strong>{critical_case_hours:.1f} hours</strong> of continuous operational halt driven by <em>{critical_case_hardware_issue}</em>. Use this specific Case ID to audit maintenance backlogs in your enterprise records.</div>
-                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block directly to <strong>{pointed_top_part}</strong> issues. This indicates physical component wear outpaces chemical variations, primarily hitting kinematic gripper pathways and Z-axis home parameters across high-run nodes.</div>
+                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block directly to <strong>{pointed_top_part}</strong> issues. Geographically, the highest frequency of total fleet breakthroughs is concentrated in <strong>{pointed_top_city}</strong>, as illuminated by the breakdown density map. Engineering re-routing and field operations must immediately prioritize these key hubs.</div>
                     <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{leading_friction_model}</strong> system line is the leading driver of cumulative fleet downtime. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture.</div>
                     """, unsafe_allow_html=True)
                 with col_b2:
@@ -381,16 +482,45 @@ else:
                     <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
                     """, unsafe_allow_html=True)
 
-            # Core Visual Layout Matrix
-            col_g1, col_g2, col_g3 = st.columns([1.4, 1.1, 1.5])
+            # Core Visual Layout Matrix with the new map-based bubble chart incorporated
+            col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
-                if 'Region' in df.columns and not df.empty:
+                if 'City' in df.columns and not df.empty:
+                    city_counts = df['City'].value_counts().reset_index()
+                    city_counts.columns = ['City', 'Breakdowns']
+                    
+                    unique_cities = city_counts['City'].dropna().unique()
+                    city_coords = geocode_cities(unique_cities)
+                    
+                    city_counts['lat'] = city_counts['City'].map(lambda x: city_coords.get(x, {}).get('lat', None))
+                    city_counts['lon'] = city_counts['City'].map(lambda x: city_coords.get(x, {}).get('lon', None))
+                    city_counts = city_counts.dropna(subset=['lat', 'lon'])
+                    
+                    if not city_counts.empty:
+                        fig_map = px.scatter_mapbox(
+                            city_counts,
+                            lat='lat',
+                            lon='lon',
+                            size='Breakdowns',
+                            hover_name='City',
+                            hover_data=['Breakdowns'],
+                            color_discrete_sequence=[CORP_BLUE],
+                            zoom=3,
+                            title="Citywide Breakdown Density Mapping"
+                        )
+                        fig_map.update_layout(
+                            mapbox_style="open-street-map",
+                            margin=dict(l=5, r=5, t=40, b=5)
+                        )
+                        st.plotly_chart(fig_map, use_container_width=True, theme="streamlit")
+                    else:
+                        st.warning("City coordinates not resolved for geographic bubble map loading.")
+                elif 'Region' in df.columns and not df.empty:
                     reg_df = df['Region'].value_counts().reset_index()
                     reg_df.columns = ['Region', 'Cases']
                     fig_bar = px.bar(reg_df, x='Region', y='Cases', title="Geographic Case Volume Load", text_auto=True, color_discrete_sequence=[CORP_BLUE])
                     fig_bar.update_traces(textposition='outside')
-                    fig_bar.update_layout(xaxis_title="Operational Sector", yaxis_title="Incident Count", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
 
             with col_g2:
@@ -484,7 +614,6 @@ else:
             col_app_chart, col_hw_chart = st.columns(2)
             
             with col_app_chart:
-                # CHART 1: APPLICATION TOP 10 PROBLEMS
                 if 'Logical Application Issue' in df.columns and not df.empty:
                     app_filter = df[df['Logical Application Issue'] != 'Other Application Issue']
                     app_problems = app_filter['Logical Application Issue'].value_counts().reset_index().head(10)
@@ -497,7 +626,6 @@ else:
                     st.plotly_chart(fig_app, use_container_width=True, theme="streamlit")
                     
             with col_hw_chart:
-                # CHART 2: HARDWARE TOP 10 PROBLEMS
                 if 'Logical Hardware Issue' in df.columns and not df.empty:
                     hw_filter = df[df['Logical Hardware Issue'] != 'Other Hardware Fault']
                     hw_problems = hw_filter['Logical Hardware Issue'].value_counts().reset_index().head(10)
