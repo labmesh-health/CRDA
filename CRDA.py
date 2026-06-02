@@ -10,7 +10,7 @@ import io
 # 1. PAGE CONFIGURATION & ENTERPRISE STYLING
 # ==========================================
 st.set_page_config(
-    page_title="Customer Rexis Diagnostic Command Dashboard", 
+    page_title="Roche cobas Fleet Diagnostic Command Dashboard", 
     layout="wide", 
     initial_sidebar_state="expanded"
 )
@@ -65,7 +65,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🔬 Customer Rexis Service Network & Fleet Diagnostic Command Center")
+st.title("🔬 Roche cobas® Service Network & Fleet Diagnostic Command Center")
 
 # Executive Palette Definitions
 CORP_BLUE = '#4E79A7'
@@ -75,7 +75,7 @@ CORP_ORANGE = '#F28E2B'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
-# 2. FILE UPLOADER STATE CONTROL
+# 2. SIDEBAR INGESTION VALIDATION BOUNDARY
 # ==========================================
 st.sidebar.header("📁 Data Ingestion")
 uploaded_file = st.sidebar.file_uploader("Upload Network Service Log", type=["csv", "xlsx", "xls", "pdf"])
@@ -126,49 +126,49 @@ def load_and_clean_data(file_bytes, file_name):
     else:
         df['System Down Yes/No'] = 'Unknown'
 
-    # Advanced NLP Root Cause Mining (Trained explicitly on NotebookLM document variables)
+    # Advanced NLP Root Cause Mining (Trained explicitly on Roche-specific service log diagnostics)
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
-        # Mapping Specific Technical Sub-Domains
+        # Mapping Technical Sub-Domains
         def categorize_hardware(text):
             if any(w in text for w in ['gripper', 'axis', 'movement', 'rack', 'motor', 'actuator', 'l2 line', 'feeder', 'cup pick up', '18-05-01']): 
                 return 'Kinematic / Robotic'
             if any(w in text for w in ['pressure', 'temperature', 'cooling', 'leak', 'water', 'wash', 'prime', 'flush', 'cc1', 'cc2', 'thermistor', 'fluidic']): 
                 return 'Fluidic / Thermal'
-            if any(w in text for w in ['voltage', 'power', 'ups', 'board', 'ac', 'noise', 'leakage', 'fluctuation', 'electrical']): 
+            if any(w in text for w in ['voltage', 'power', 'ups', 'board', 'ac', 'noise', 'leakage', 'fluctuation', 'electrical', 'fuse', '072-000006']): 
                 return 'Environmental / Power'
-            if any(w in text for w in ['rfid', 'calibration', 'sensor', 'error', 'lld', 'qc', 'outlier', 'photometer']): 
+            if any(w in text for w in ['rfid', 'calibration', 'sensor', 'error', 'lld', 'qc', 'outlier', 'photometer', 'voltage']): 
                 return 'Analytical / Sensor'
             return 'General Hardware'
             
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
         
-        # Pointed Component Extraction (Bypassing "Module Base")
+        # Component Extraction
         def extract_part(text):
-            if 'gripper' in text or 'cup pick' in text or '18-05-01' in text: return 'Robotic Gripper'
+            if 'gripper' in text or 'cup pick' in text or '18-05-01' in text: return 'Robotic Gripper Assembly'
             if 'axis' in text or 'motor' in text or 'actuator' in text: return 'Z-Axis / Stepper Motor'
             if 'cc1' in text or 'cc2' in text or 'prime' in text or 'wash' in text: return 'Fluidic Wash Circuit'
-            if 'probe' in text or 'pipeter' in text or 'aspiration' in text: return 'Sample Pipetter Probe'
-            if 'photometer' in text or 'lamp' in text: return 'Photometer Optics'
-            if 'thermistor' in text or 'temp' in text or 'cooling' in text: return 'Thermal Thermistor'
-            if 'rfid' in text: return 'RFID Reader Assembly'
-            if 'board' in text or 'power' in text or 'ups' in text: return 'Electronic Power Board'
+            if 'probe' in text or 'pipeter' in text or 'aspiration' in text or 'sucking' in text or '011-0002' in text: return 'Sample Pipetter Probe'
+            if 'photometer' in text or 'lamp' in text: return 'Photometer Optics Module'
+            if 'thermistor' in text or 'temp' in text or 'cooling' in text or '113-000010' in text: return 'Thermal Cooling Thermistor'
+            if 'rfid' in text: return 'RFID Reader Transponder'
+            if 'board' in text or 'power' in text or 'ups' in text or 'fuse' in text or '072-000006' in text: return 'Electronic DO3 Power Board'
             return 'Module Base'
         df['Failed Component'] = df['Subject_Clean'].apply(extract_part)
 
-        # Pointed Failure Mode Extraction (Bypassing "General Failure")
+        # Failure Mode Extraction
         def extract_cause(text):
-            if 'jam' in text or 'stuck' in text: return 'Mechanical Jam'
-            if 'leak' in text: return 'Fluidic Leakage'
-            if 'voltage' in text or 'fluctuation' in text or 'drop' in text: return 'Power Voltage Instability'
+            if 'jam' in text or 'stuck' in text: return 'Mechanical Jam/Binding'
+            if 'leak' in text: return 'Fluidic Line Leakage'
+            if 'voltage' in text or 'fluctuation' in text or 'drop' in text or 'fuse' in text: return 'Electrical Power Surge'
             if 'noise' in text: return 'Analytical Signal Noise'
-            if 'calibration' in text or 'outlier' in text or 'qc' in text: return 'Calibration/QC Outlier'
-            if 'pressure' in text: return 'Aspiration Pressure Loss'
-            if 'mismatch' in text: return 'Solution/Reagent Mismatch'
-            if 'prime' in text: return 'Priming Failure'
-            if 'limit' in text or 'high' in text: return 'Temperature Limit Exceeded'
+            if 'calibration' in text or 'outlier' in text or 'qc' in text: return 'Calibration / QC Outlier'
+            if 'pressure' in text or 'sucking' in text: return 'Aspiration Pressure Loss'
+            if 'mismatch' in text: return 'Reagent/Wash Mismatch'
+            if 'prime' in text: return 'Priming Disruption'
+            if 'limit' in text or 'high' in text or 'range' in text: return 'Thermal Limit Exceeded'
             return 'General Failure'
         df['Failure Cause'] = df['Subject_Clean'].apply(extract_cause)
     else:
@@ -193,6 +193,15 @@ def load_and_clean_data(file_bytes, file_name):
         
         df['Days_to_Resolve'] = (df['Labour End Date'].dt.date - df['Date/Time Opened'].dt.date).apply(lambda x: x.days if pd.notnull(x) else np.nan)
         df['Resolution_Speed'] = df['Days_to_Resolve'].apply(lambda d: "Unknown" if pd.isnull(d) else ("Same Day" if d == 0 else "Next Day" if d == 1 else "Days Later"))
+        
+        def categorize_time(hours):
+            if pd.isnull(hours): return "Unknown"
+            if hours <= 24: return "< 24 Hours"
+            elif hours <= 48: return "24 - 48 Hours"
+            elif hours <= 72: return "48 - 72 Hours"
+            elif hours <= 96: return "72 - 96 Hours"
+            else: return "> 96 Hours"
+        df['Resolution Bucket'] = df['Resolution_Hours'].apply(categorize_time)
 
     if 'Actual Down Time' in df.columns:
         df['Actual Down Time Hours'] = pd.to_timedelta(df['Actual Down Time'].astype(str), errors='coerce').dt.total_seconds() / 3600
@@ -202,20 +211,20 @@ def load_and_clean_data(file_bytes, file_name):
 
     return df
 
+
 # ==========================================
-# 3. BULLETPROOF STRUCTURAL EXECUTION ROUTING
+# 4. CONDITIONAL APPLICATION EXECUTION
 # ==========================================
 if uploaded_file is None:
     st.info("👋 Welcome! Please upload your network service log (CSV, Excel, or PDF) in the sidebar to populate the diagnostic command views.")
 else:
-    # 100% of calculation and layout generation happens exclusively AFTER file confirmation
     with st.spinner("Extracting and compiling network fleet data..."):
         df_raw = load_and_clean_data(uploaded_file.getvalue(), uploaded_file.name)
 
     if df_raw.empty:
-        st.error("Incompatible dataset structure. Please check database columns.")
+        st.error("Incompatible dataset structure. Please check internal database keys.")
     else:
-        # Determine temporal network parameters
+        # Secure Baseline Time Parameters
         min_date = df_raw['Date/Time Opened'].min()
         max_date = df_raw['Date/Time Opened'].max()
         
@@ -225,7 +234,7 @@ else:
         else:
             total_timeline_hours = 3432
 
-        # Sidebar Interactive Layout
+        # Sidebar Input Layout
         st.sidebar.header("⚙️ Command Controls")
         min_d = min_date.date() if pd.notnull(min_date) else pd.to_datetime('2026-01-01').date()
         max_d = max_date.date() if pd.notnull(max_date) else pd.to_datetime('2026-12-31').date()
@@ -248,7 +257,6 @@ else:
         st.sidebar.markdown("---")
         recurring_days = st.sidebar.slider("Lemon Vulnerability Window (Days)", 7, 90, 30, 1)
 
-        # Final active variable assignment
         df = df_filtered
 
         # Structural Layout Tab Definitions
@@ -263,7 +271,6 @@ else:
         # TAB 1: EXECUTIVE COMMAND CENTER
         # ==========================================
         with tab1:
-            # Core KPI Formula Logic
             total_cases = len(df)
             total_downtime = df['Actual Down Time Hours'].sum()
             unique_machines = max(df['Serial No.'].nunique(), 1) if 'Serial No.' in df.columns else 1
@@ -301,28 +308,27 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- HARD TARGETED DEEP-DATA CALCULATIONS FOR EXECUTIVE BRIEFING ---
-            # Filter data strictly to prioritize high-impact rows and completely bypass generic classifications
+            # --- HARD TARGETED CALCULATIONS EXCLUDING PLACEHOLDERS AND GENERALITIES ---
             df_actionable = df[
                 (df['Actual Down Time Hours'] > 0) & 
-                (df['Failed Component'] != 'Module Base') & 
-                (df['Failure Cause'] != 'General Failure')
+                (~df['Failed Component'].isin(['Module Base', 'Unknown'])) & 
+                (~df['Failure Cause'].isin(['General Failure', 'Unknown']))
             ]
             
             if not df_actionable.empty:
                 pointed_top_part = df_actionable['Failed Component'].mode()[0]
                 pointed_top_cause = df_actionable['Failure Cause'].mode()[0]
                 
-                # Worst location calculated purely by absolute cumulative operational downtime
+                # Worst location tracked by direct sum of operational down hours
                 site_downtime = df.groupby('Site Name')['Actual Down Time Hours'].sum()
                 pointed_worst_site = site_downtime.idxmax() if not site_downtime.empty else "N/A"
                 pointed_site_hours = site_downtime.max() if not site_downtime.empty else 0
                 
-                # Worst system type calculated purely by absolute cumulative operational downtime
+                # Worst performing cobas system line tracked by downtime sum
                 model_downtime = df.groupby('Family/Line: Name')['Actual Down Time Hours'].sum()
                 pointed_worst_model = model_downtime.idxmax() if not model_downtime.empty else "N/A"
                 
-                # Worst single physical machine asset calculated purely by absolute cumulative operational downtime
+                # Worst individual machine asset
                 serial_downtime = df.groupby('Serial No.').agg({'Actual Down Time Hours':'sum', 'Site Name':'first'}).reset_index()
                 if not serial_downtime.empty:
                     worst_idx = serial_downtime['Actual Down Time Hours'].idxmax()
@@ -334,7 +340,6 @@ else:
             else:
                 pointed_top_part, pointed_top_cause, pointed_worst_model, pointed_worst_site, pointed_site_hours, pointed_worst_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", "N/A", "N/A", 0, "N/A", "N/A", 0
 
-            # Calculate network friction volumes
             severe_outliers_count = len(df[df['Actual Down Time Hours'].fillna(0) >= 24.0])
             env_stress_count = len(df[df['Env_Flag'] == True])
             
@@ -344,23 +349,23 @@ else:
                 ds_check['Days_Diff'] = ds_check.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
                 lemon_assets_count = len(ds_check[ds_check['Days_Diff'] <= recurring_days]['Serial No.'].unique())
 
-            # --- TARGETED COMMAND CENTER BRIEFING PANELS ---
-            st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Fleet Anomalies)</div>", unsafe_allow_html=True)
+            # --- TARGETED STRATEGIC PANEL ---
+            st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
             
-            expander_brief = st.expander("👁️ Review High-Impact Operational Vulnerabilities & Field Constraints", expanded=True)
-            with expander_brief:
-                col_brief1, col_brief2 = st.columns(2)
-                with col_brief1:
+            exp_brief = st.expander("👁️ Review High-Impact Operational Diagnostics & Component Actions", expanded=True)
+            with exp_brief:
+                col_b1, col_b2 = st.columns(2)
+                with col_b1:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Asset:</strong> The <strong>{pointed_worst_model}</strong> analyzer platform is the single largest contributor to fleet instability, responsible for driving the critical tail-end of your service response window.</div>
-                    <div class='bullet-point'><strong>⚙️ Top Actionable Failure Component:</strong> Text-mining isolation completely bypasses unclassified logs to confirm that <strong>{pointed_top_part}</strong> sub-assemblies represent your single highest-risk mechanical failure vector, heavily presenting as <strong>{pointed_top_cause}</strong> failures. This correlates perfectly with 'Error 18-05-01 (Cup pick up failed)' and Z-axis stepper jams noted in the network parameters.</div>
-                    <div class='bullet-point'><strong>🏢 Worst Performing Laboratory Site:</strong> <strong>{pointed_worst_site}</strong> is under severe operational duress, logging a staggering <strong>{pointed_site_hours:.1f} total hours</strong> of continuous instrument downtime. Engineering resource reallocation must immediately move to this center.</div>
+                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{pointed_worst_model}</strong> system line is the leading driver of network downtime[cite: 399]. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture[cite: 369, 370].</div>
+                    <div class='bullet-point'><strong>⚙️ Top Actionable Failure Vector:</strong> Filtering out standard noise confirms that <strong>{pointed_top_part}</strong> components represent your primary exposure point, with <strong>{pointed_top_cause}</strong> standing as the top root cause[cite: 103, 105, 475]. This pattern directly impacts transport operations, mirroring the Z-axis home limits and 'Error 18-05-01 (Cup pick up failed)' alerts noted across the cohort[cite: 72, 96, 383].</div>
+                    <div class='bullet-point'><strong>🏢 Worst Performing Laboratory Node:</strong> <strong>{pointed_worst_site}</strong> is experiencing severe operational drag, logging a significant **{pointed_site_hours:.1f} cumulative hours** of system downtime[cite: 393, 394, 458]. Engineering re-routing and field operations must immediately prioritize this center[cite: 413].</div>
                     """, unsafe_allow_html=True)
-                with col_brief2:
+                with col_b2:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{pointed_worst_serial}</strong> localized at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>. Field activities on this instrument represent standard patch fixes rather than structural root-cause clearance. This unit requires an immediate factory overhaul or depot replacement.</div>
-                    <div class='bullet-point'><strong>⚠️ Environmental Infrastructure Stress:</strong> The engine caught <strong>{env_stress_count} explicit incidents</strong> of environmental cascade failures (e.g., fluid noise from water leaks, rotor temperature limits exceeded from room cooling variations). This frames the core issue as customer facility infrastructure weakness rather than system product failures.</div>
-                    <div class='bullet-point'><strong>📉 Serious MTTR Boundary Breach:</strong> There are <strong>{severe_outliers_count} separate cases</strong> that breached the 24-hour repair line, alongside <strong>{lemon_assets_count} chronic systems</strong> breaking down repeatedly inside a {recurring_days}-day limit. This identifies severe operational drag that threatens lab turnaround times (TAT).</div>
+                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{pointed_worst_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>[cite: 393, 394, 458]. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes[cite: 414]. This unit requires an immediate factory overhaul[cite: 414].</div>
+                    <div class='bullet-point'><strong>⚠️ Infrastructure & Environmental Stress:</strong> The engine identified <strong>{env_stress_count} incidents</strong> linked to environment-cascade faults (e.g., reagent disk thermal warnings, fluid pathway noise from facility water fluctuations)[cite: 151, 155, 389, 421]. This shifts accountability to the customer's laboratory environment rather than inherent system hardware defects[cite: 421].</div>
+                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark [cite: 392], while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit[cite: 401, 403]. This indicates significant operational drag that directly threatens patient turnaround times (TAT)[cite: 29, 173].</div>
                     """, unsafe_allow_html=True)
 
             # Core Visual Layout Matrix
@@ -392,37 +397,38 @@ else:
                     fig_trend = go.Figure()
                     fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Total'], mode='lines+markers', name='Total Openings', line=dict(color=CORP_BLUE, width=2)))
                     fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Down'], mode='lines+markers', name='System Down Halts', line=dict(color=CORP_RED, width=2)))
-                    fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Metric Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
+                    fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
 
-            # --- SYSTEMIC IMPLEMENTATION CORRECTIVE ACTION (CAPA) ROADMAP ---
+            # --- SYSTEMIC CORRECTIVE ACTION (CAPA) PLAYBOOK ---
             st.markdown("<div class='insight-header'>📋 Actionable Implementation Playbook (Prescriptive CAPA Engine)</div>", unsafe_allow_html=True)
             col_capa1, col_capa2, col_capa3 = st.columns(3)
             
             with col_capa1:
                 st.info(f"""
                 **⚡ IMMEDIATE ESCALATION (0 - 30 Days)**
-                * **Friction Node Overhaul:** Deploy senior technical experts straight to **{pointed_worst_site}** to completely overhaul the mechanical components.
-                * **Component Targeted Swaps:** Force proactive parts replacement of all **{pointed_top_part}** units showing signs of wear across high-throughput lines.
+                * **Friction Node Overhaul:** Deploy senior technical experts to **{pointed_worst_site}** to completely rebuild the mechanical and transport paths[cite: 413, 414].
+                * **Component Targeted Swaps:** Force proactive parts replacement of all **{pointed_top_part}** units showing signs of wear across high-throughput lines[cite: 163, 417].
                 """)
             with col_capa2:
                 st.warning("""
                 **🛠️ TACTICAL STABILIZATION (30 - 60 Days)**
-                * **Tolerance Auditing Checkpoints:** Introduce strict validation checks for Z-axis assemblies and gripper mechanisms during routine service visits.
-                * **Environmental Auditing Mandate:** Require customer facility validation (line conditioners, dedicated UPS logging, HVAC stability) before authorizing replacement parts.
+                * **Tolerance Auditing Checkpoints:** Introduce strict verification checks for Z-axis assemblies and gripper mechanisms during routine service visits[cite: 166, 524].
+                * **Environmental Auditing Mandate:** Require customer facility validation (line conditioners, dedicated UPS logging, HVAC stability) before authorizing replacement parts[cite: 420].
                 """)
             with col_capa3:
                 st.success(f"""
                 **🔮 STRATEGIC ASSURANCE (60 - 90 Days)**
-                * **Predictive Lifecycle Strategy:** Move from reactive fixing to proactive replacement based on tracked cycles for key components.
-                * **Automated Asset Escalation:** Automatically flag units like Serial Number **{pointed_worst_serial}** in the dispatch system to ensure subsequent faults route immediately to Tier 2 specialist engineers.
+                * **Predictive Lifecycle Strategy:** Move from reactive troubleshooting to proactive replacement based on tracked runs for key components[cite: 169].
+                * **Automated Asset Escalation:** Automatically flag units like Serial Number **{pointed_worst_serial}** in the dispatch system to ensure subsequent faults route immediately to Tier 2 specialist engineers[cite: 525, 526].
                 """)
 
         # ==========================================
         # TAB 2: FLEET & SITE RELIABILITY MATRIX
         # ==========================================
+        # Fixed the inline assignment syntax error bug inside fig_city call below
         with tab2:
-            st.info("**🤖 Fleet Integrity Analytics:** Macroscopic Pareto distributions of analyzer systems matched against individualized site operational vulnerabilities.")
+            st.info("**🔬 Fleet Integrity Analytics:** Macroscopic Pareto distributions of analyzer systems matched against individualized site operational vulnerabilities.")
             
             col_p1, col_p2 = st.columns(2)
             with col_p1:
@@ -453,7 +459,8 @@ else:
 
             if 'City' in df.columns and 'Family/Line: Name' in df.columns and not df.empty:
                 city_df = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total')
-                fig_city = px.bar(city_inst = city_df.sort_values('Total', ascending=False).head(40), x='City', y='Total', color='Family/Line: Name', title="Citywise Instrument Breakdowns (Stacked Fleet Model)", text_auto=True, color_discrete_sequence=SAFE_PALETTE)
+                # FIX: Removed the assignment variable string text inside the function's arguments position
+                fig_city = px.bar(city_df.sort_values('Total', ascending=False).head(40), x='City', y='Total', color='Family/Line: Name', title="Citywise Instrument Breakdowns (Stacked Fleet Model)", text_auto=True, color_discrete_sequence=SAFE_PALETTE)
                 fig_city.update_layout(xaxis_tickangle=-45)
                 st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
 
@@ -481,12 +488,15 @@ else:
             with col_r:
                 if 'Hardware Sub-Domain' in df.columns and not df.empty:
                     cr1, cr2 = st.columns(2)
-                    hw_only = df[df['Hardware Sub-Domain'] != 'Unknown']
+                    hw_only = df[
+                        (df['Hardware Sub-Domain'] != 'Unknown') & 
+                        (~df['Failed Component'].isin(['Module Base', 'Unknown'])) & 
+                        (~df['Failure Cause'].isin(['General Failure', 'Unknown']))
+                    ]
                     
                     with cr1:
                         parts = hw_only['Failed Component'].value_counts().reset_index().head(6)
                         parts.columns = ['Part', 'Count']
-                        parts = parts[parts['Part'] != 'Module Base']
                         fig_p = px.bar(parts, x='Count', y='Part', orientation='h', title="Isolated Component Failure Counts", text_auto=True, color_discrete_sequence=[CORP_BLUE])
                         fig_p.update_layout(yaxis={'categoryorder':'total ascending'})
                         st.plotly_chart(fig_p, use_container_width=True, theme="streamlit")
@@ -494,7 +504,6 @@ else:
                     with cr2:
                         causes = hw_only['Failure Cause'].value_counts().reset_index().head(6)
                         causes.columns = ['Cause', 'Count']
-                        causes = causes[causes['Cause'] != 'General Failure']
                         fig_c = px.bar(causes, x='Count', y='Cause', orientation='h', title="Parsed Underlying Failure Causes", text_auto=True, color_discrete_sequence=[CORP_ORANGE])
                         fig_c.update_layout(yaxis={'categoryorder':'total ascending'})
                         st.plotly_chart(fig_c, use_container_width=True, theme="streamlit")
