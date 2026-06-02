@@ -55,6 +55,10 @@ CORP_ORANGE = '#F28E2B'
 CORP_GREEN = '#59A14F'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
+# --- FOOLPROOF NAMESPACE INITIALIZATION ---
+# This guarantees total_timeline_hours is ALWAYS defined from line 1 onwards
+total_timeline_hours = 3432 
+
 # ==========================================
 # SIDEBAR DATA INGESTION
 # ==========================================
@@ -198,16 +202,16 @@ def load_and_clean_data(file_bytes, file_name):
 
     return df
 
-# STOP INTERACTIVE RENDERING UNTIL A DATASET IS UPLOADED
+# STOP RENDER LOOP UNTIL DATA IS UPLOADED
 if uploaded_file is None:
     st.info("👋 Welcome! Please upload your service log (CSV, Excel, or PDF) in the sidebar to load the analytical views.")
     st.stop()
 
-# Execution continues safely below ONLY when file bytes exist in memory
+# Load the file bytes into data frame
 with st.spinner("Extracting and processing data..."):
     df_raw = load_and_clean_data(uploaded_file.getvalue(), uploaded_file.name)
 
-# --- TIMELINE SETUP (Declared safely out of scope-check boundaries) ---
+# --- DYNAMIC OVERWRITE OF TIMELINE HOURS ---
 min_date = df_raw['Date/Time Opened'].min()
 max_date = df_raw['Date/Time Opened'].max()
 total_timeline_hours = max(((max_date - min_date).days if pd.notnull(max_date) else 143) * 24, 24)
@@ -230,7 +234,7 @@ st.sidebar.markdown("---")
 recurring_days = st.sidebar.slider("Flag recurring breakdowns within (Days):", 7, 90, 30, 1)
 
 # ==========================================
-# TABS DECLARATION (Executed ONLY after variables are completely built)
+# CONSOLIDATED DASHBOARD TABS
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 1. Executive Dashboard", 
