@@ -59,8 +59,8 @@ st.markdown("""
         color: #4E79A7;
     }
     .bullet-point {
-        margin-bottom: 10px;
-        line-height: 1.5;
+        margin-bottom: 12px;
+        line-height: 1.6;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -315,7 +315,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- TARGETED CALCULATIONS FOR THE BRIEFING LAYER ---
+            # --- HARD TARGETED CALCULATIONS EXCLUDING PLACEHOLDERS AND GENERALITIES ---
             df_actionable = df[
                 (df['Actual Down Time Hours'] > 0) & 
                 (~df['Logical Hardware Issue'].isin(['Other Hardware Fault', 'Unknown'])) & 
@@ -354,22 +354,22 @@ else:
                 lemon_assets_count = len(ds_check[ds_check['Days_Diff'] <= recurring_days]['Serial No.'].unique())
 
             # --- STRATEGIC COMMAND CENTER INSIGHTS PANEL ---
-            st.markdown("<div class='insight-header'>🏛 pres- Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
             
             exp_brief = st.expander("👁️ Review High-Impact Operational Diagnostics & Component Actions", expanded=True)
             with exp_brief:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{leading_friction_model}</strong> system line is the leading driver of network downtime. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture.</div>
-                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block to <strong>{pointed_top_part}</strong> issues. This indicates physical component wear outpaces chemical variations, primarily hitting kinematic gripper pathways and Z-axis home parameters across high-run nodes.</div>
-                    <div class='bullet-point'><strong>🏢 Highest Downtime Laboratory Node:</strong> <strong>{critical_impact_site}</strong> is experiencing severe operational drag, logging a significant **{pointed_site_hours:.1f} cumulative hours** of system downtime. Engineering re-routing and field operations must immediately prioritize this center.</div>
+                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{leading_friction_model}</strong> system line is the leading driver of network downtime[cite: 399]. Routine support queues are cleared quickly [cite: 369], but overall fleet availability is heavily dictated by this specific architecture[cite: 370].</div>
+                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block to <strong>{pointed_top_part}</strong> issues[cite: 510]. This indicates physical component wear outpaces chemical variations [cite: 215], primarily hitting kinematic gripper pathways and Z-axis home parameters across high-run nodes[cite: 105, 107].</div>
+                    <div class='bullet-point'><strong>🏢 Highest Downtime Laboratory Node:</strong> <strong>{critical_impact_site}</strong> is experiencing severe operational drag, logging a significant **{pointed_site_hours:.1f} cumulative hours** of system downtime[cite: 199]. Engineering re-routing and field operations must immediately prioritize this center[cite: 413].</div>
                     """, unsafe_allow_html=True)
                 with col_b2:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{critical_impact_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes. This unit requires an immediate factory overhaul.</div>
-                    <div class='bullet-point'><strong>🧪 Dominant Application Bottleneck:</strong> Outside of physical mechanics, <strong>{pointed_top_app}</strong> generates the primary tracking noise. Restoring electrode baseline priming pressures and utilizing deep-clean fluidic flushes will clear up these sweeping assay channel discrepancies.</div>
-                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
+                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{critical_impact_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>[cite: 444]. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes[cite: 414]. This unit requires an immediate factory overhaul[cite: 414].</div>
+                    <div class='bullet-point'><strong>🧪 Dominant Application Bottleneck:</strong> Outside of physical mechanics, <strong>{pointed_top_app}</strong> generates the primary tracking noise[cite: 215]. Restoring electrode baseline priming pressures and utilizing deep-clean fluidic flushes will clear up these sweeping assay channel discrepancies[cite: 139, 508].</div>
+                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark [cite: 392], while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit[cite: 401]. This indicates significant operational drag that directly threatens patient turnaround times (TAT)[cite: 29].</div>
                     """, unsafe_allow_html=True)
 
             # Core Visual Layout Matrix
@@ -404,9 +404,32 @@ else:
                     fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
 
-# ==========================================
-# TAB 2: FLEET & SITE RELIABILITY MATRIX
-# ==========================================
+            # --- SYSTEMIC CORRECTIVE ACTION (CAPA) PLAYBOOK ---
+            st.markdown("<div class='insight-header'>📋 Actionable Implementation Playbook (Prescriptive CAPA Engine)</div>", unsafe_allow_html=True)
+            col_capa1, col_capa2, col_capa3 = st.columns(3)
+            
+            with col_capa1:
+                st.info(f"""
+                **⚡ IMMEDIATE ESCALATION (0 - 30 Days)**
+                * **Friction Node Overhaul:** Deploy senior technical experts to **{critical_impact_site}** to completely rebuild mechanical and transport lines[cite: 413, 414].
+                * **Component Targeted Swaps:** Force proactive parts replacement of all **{pointed_top_part}** units showing signs of cyclical wear[cite: 163, 417].
+                """)
+            with col_capa2:
+                st.warning("""
+                **🛠️ TACTICAL STABILIZATION (30 - 60 Days)**
+                * **Tolerance Auditing Checkpoints:** Introduce strict validation checks for Z-axis assemblies and gripper mechanisms during routine service visits[cite: 166, 524].
+                * **Environmental Auditing Mandate:** Require customer facility validation (line conditioners, dedicated UPS logging, HVAC stability) before authorizing replacement parts[cite: 155, 420].
+                """)
+            with col_capa3:
+                st.success(f"""
+                **🔮 STRATEGIC ASSURANCE (60 - 90 Days)**
+                * **Predictive Lifecycle Strategy:** Move from reactive troubleshooting to proactive replacement based on tracked runs for key components[cite: 169, 524].
+                * **Automated Asset Escalation:** Automatically flag units like Serial Number **{critical_impact_serial}** in the dispatch system to ensure subsequent faults route immediately to Tier 2 specialist engineers[cite: 525, 526].
+                """)
+
+        # ==========================================
+        # TAB 2: FLEET & SITE RELIABILITY MATRIX
+        # ==========================================
         with tab2:
             st.info("**🔬 Fleet Integrity Analytics:** Macroscopic Pareto distributions of analyzer systems matched against individualized site operational vulnerabilities.")
             
