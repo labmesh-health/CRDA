@@ -75,7 +75,7 @@ CORP_ORANGE = '#F28E2B'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
-# 2. DYNAMIC GEODOCING RECTORY DIRECTORY
+# 2. DYNAMIC GEOCODING DIRECTORY
 # ==========================================
 @st.cache_data(show_spinner=False)
 def geocode_cities(city_list):
@@ -141,7 +141,7 @@ def geocode_cities(city_list):
         'KOTA': {'lat': 25.2138, 'lon': 75.8648},
         'GWALIOR': {'lat': 26.2183, 'lon': 78.1828},
         'JABALPUR': {'lat': 23.1815, 'lon': 79.9864},
-        'TRICHY': {'lat': 10.7905, '8.7047': 78.7047},
+        'TRICHY': {'lat': 10.7905, 'lon': 78.7047},
         'SALEM': {'lat': 11.6643, 'lon': 78.1460},
         'MADURAI': {'lat': 9.9252, 'lon': 78.1198},
         'VARANASI': {'lat': 25.3176, 'lon': 82.9739},
@@ -412,7 +412,6 @@ else:
 
             # --- TARGETED AND EXPANDED DIRECT ROW/CASE ID CALCULATIONS ---
             if not df.empty:
-                # Trace the exact high-downtime data row index to uncover granular case parameters
                 max_down_idx = df['Actual Down Time Hours'].idxmax()
                 critical_case_number = df.loc[max_down_idx, 'Case Number'] if 'Case Number' in df.columns else "N/A"
                 critical_case_hours = df.loc[max_down_idx, 'Actual Down Time Hours']
@@ -420,7 +419,6 @@ else:
                 critical_case_model = df.loc[max_down_idx, 'Family/Line: Name'] if 'Family/Line: Name' in df.columns else "N/A"
                 critical_case_hardware_issue = df.loc[max_down_idx, 'Logical Hardware Issue']
                 
-                # Actionable mode distribution calculations
                 df_actionable = df[
                     (df['Actual Down Time Hours'] > 0) & 
                     (~df['Logical Hardware Issue'].isin(['Other Hardware Fault', 'Unknown'])) & 
@@ -482,7 +480,7 @@ else:
                     <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
                     """, unsafe_allow_html=True)
 
-            # Core Visual Layout Matrix with the new map-based bubble chart incorporated
+            # Core Visual Layout Matrix with map-based bubble chart
             col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
@@ -490,8 +488,9 @@ else:
                     city_counts = df['City'].value_counts().reset_index()
                     city_counts.columns = ['City', 'Breakdowns']
                     
-                    unique_cities = city_counts['City'].dropna().unique()
-                    city_coords = geocode_cities(unique_cities)
+                    # FIX: Pass the unique cities as a tuple so Streamlit can cache it securely!
+                    unique_cities_tuple = tuple(city_counts['City'].dropna().unique())
+                    city_coords = geocode_cities(unique_cities_tuple)
                     
                     city_counts['lat'] = city_counts['City'].map(lambda x: city_coords.get(x, {}).get('lat', None))
                     city_counts['lon'] = city_counts['City'].map(lambda x: city_coords.get(x, {}).get('lon', None))
