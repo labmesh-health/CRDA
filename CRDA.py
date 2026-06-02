@@ -69,13 +69,13 @@ def load_and_clean_data(file_bytes, file_name):
     # 1. READ THE FILE
     try:
         if file_ext == 'csv':
-            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
+            file_object.seek(0)
             df = pd.read_csv(file_object)
         elif file_ext in ['xls', 'xlsx']:
-            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
+            file_object.seek(0)
             df = pd.read_excel(file_object)
         elif file_ext == 'pdf':
-            file_object.seek(0) # FIX: Reset stream pointer to beginning of file
+            file_object.seek(0)
             with pdfplumber.open(file_object) as pdf:
                 all_tables = []
                 for page in pdf.pages:
@@ -142,7 +142,7 @@ def load_and_clean_data(file_bytes, file_name):
             return found[0] if found else 'General Failure'
         df['Failure Cause'] = df['Subject_Clean'].apply(extract_cause)
 
-        # Extracted Fix (if Remarks exist, search there too)
+        # Extracted Fix
         remarks_col = 'Remarks' if 'Remarks' in df.columns else 'Subject'
         df['Remarks_Clean'] = df[remarks_col].fillna('').astype(str).str.lower()
         def extract_fix(row):
@@ -198,13 +198,16 @@ def load_and_clean_data(file_bytes, file_name):
 
     return df
 
+# Halt execution gracefully if no file is present
 if uploaded_file is None:
     st.info("👋 Welcome! Please upload your service log (CSV, Excel, or PDF) in the sidebar.")
     st.stop()
 
+# Execution continues safely only when file exists
 with st.spinner("Extracting and processing data..."):
     df_raw = load_and_clean_data(uploaded_file.getvalue(), uploaded_file.name)
 
+# --- TIMELINE SETUP (Safe from NameErrors) ---
 min_date = df_raw['Date/Time Opened'].min()
 max_date = df_raw['Date/Time Opened'].max()
 total_timeline_hours = max(((max_date - min_date).days if pd.notnull(max_date) else 143) * 24, 24)
@@ -240,7 +243,6 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.info("**🤖 Executive Summary:** System health tracking and high-level Service Level Agreement (SLA) compliance.")
     
-    # Calculate KPIs safely
     num_unique_machines = max(df['Serial No.'].nunique(), 1) if 'Serial No.' in df.columns else 1
     total_down = df['Actual Down Time Hours'].sum() if 'Actual Down Time Hours' in df.columns else 0
     uptime_pct = ((total_timeline_hours - (total_down / num_unique_machines)) / total_timeline_hours) * 100
@@ -251,7 +253,7 @@ with tab1:
         
     avg_downtime = df['Actual Down Time Hours'].mean() if 'Actual Down Time Hours' in df.columns else 0
 
-    # PILLOWED KPI CARDS (HTML)
+    # PILLOWED KPI CARDS
     col1, col2, col3, col4 = st.columns(4)
     col1.markdown(f"<div class='kpi-card'><div class='kpi-value'>{len(df)}</div><div class='kpi-label'>Total Support Cases</div></div>", unsafe_allow_html=True)
     col2.markdown(f"<div class='kpi-card'><div class='kpi-value'>{uptime_pct:.2f}%</div><div class='kpi-label'>Network Uptime (24h)</div></div>", unsafe_allow_html=True)
@@ -289,7 +291,6 @@ with tab2:
     col_pareto1, col_pareto2 = st.columns(2)
     with col_pareto1:
         if 'Family/Line: Name' in df.columns:
-            # Product Family Pareto
             fam_counts = df.groupby('Family/Line: Name').size().reset_index(name='Complaints').sort_values(by='Complaints', ascending=False).head(10)
             fam_counts['Cum%'] = fam_counts['Complaints'].cumsum() / fam_counts['Complaints'].sum() * 100
             fig_fam = go.Figure()
@@ -300,7 +301,6 @@ with tab2:
 
     with col_pareto2:
         if 'Type of Complaint' in df.columns and 'Site Name' in df.columns:
-            # Top Sites Pareto (80/20) with Env Flags
             hw_df = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
             if not hw_df.empty:
                 env_sites = hw_df[hw_df['Env_Flag'] == True]['Site Name'].unique()
@@ -315,7 +315,6 @@ with tab2:
                 st.plotly_chart(fig_site, use_container_width=True, theme="streamlit")
 
     if 'City' in df.columns and 'Family/Line: Name' in df.columns:
-        # Citywise Stacked
         city_inst = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total')
         fig_city = px.bar(city_inst.sort_values(by='Total', ascending=False).head(40), x='City', y='Total', color='Family/Line: Name', title="Citywise Instrument Breakdowns (Stacked)", text_auto=True, color_discrete_sequence=SAFE_PALETTE)
         st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
@@ -333,14 +332,13 @@ with tab3:
 
     with col_rca:
         if 'Hardware Sub-Domain' in df.columns:
-            # Top Parts, Causes, Fixes Sub-columns
             hw_filter = df[df['Hardware Sub-Domain'] != 'Unknown']
             r1, r2, r3 = st.columns(3)
             
             # 1. Top Parts
             part_df = hw_filter['Failed Component'].value_counts().reset_index().head(6)
             part_df.columns = ['Part', 'Count']
-            part_df = part_df[part_df['Part'] != 'Module Base'] # Hide defaults if others exist
+            part_df = part_df[part_df['Part'] != 'Module Base']
             fig_p = px.bar(part_df, x='Count', y='Part', orientation='h', title="Top Failed Parts", text_auto=True, color_discrete_sequence=[CORP_BLUE])
             fig_p.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=30, b=0))
             r1.plotly_chart(fig_p, use_container_width=True, theme="streamlit")
@@ -366,7 +364,7 @@ with tab4:
     col_t1, col_t2 = st.columns(2)
     
     with col_t1:
-        st.warning(f"**🍋 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
+        st.warning(f"**🤖 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
         if 'Serial No.' in df.columns and 'Date/Time Opened' in df.columns:
             df_sort = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
             df_sort['Days_Since_Last'] = df_sort.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
@@ -378,17 +376,14 @@ with tab4:
     with col_t2:
         st.error("**🚨 Network Friction Events:** Single incidents causing **>24 Hours** of operational downtime.")
         if 'Actual Down Time Hours' in df.columns:
-            # FIX: fillna(0) ensures boolean masking works without NaN errors
             severe_mask = df['Actual Down Time Hours'].fillna(0) >= 24.0
             severe_df = df[severe_mask].sort_values('Actual Down Time Hours', ascending=False)
-            
             if not severe_df.empty:
                 st.dataframe(severe_df[['Case Number', 'Serial No.', 'Site Name', 'Actual Down Time Hours', 'Failed Component']], use_container_width=True, height=300)
 
     st.markdown("---")
     st.subheader("🔍 Complete Serial Number Uptime Matrix")
     
-    # Bulletproof Groupby (prevents dropping NaNs and handles empty filtered data gracefully)
     if all(col in df.columns for col in ['Serial No.', 'Site Name', 'Family/Line: Name', 'Case Number', 'Actual Down Time Hours']):
         serial_df = df.groupby(['Serial No.', 'Site Name', 'Family/Line: Name'], dropna=False).agg({
             'Case Number': 'count', 
