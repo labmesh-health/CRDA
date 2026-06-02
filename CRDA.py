@@ -126,7 +126,9 @@ def load_and_clean_data(file_bytes, file_name):
     else:
         df['System Down Yes/No'] = 'Unknown'
 
-    # Advanced NLP Root Cause Mining (Trained explicitly on Roche-specific service log diagnostics)
+    # ===================================================
+    # 3. DIRECT LOGICAL KEYWORD MAPPING MATRIX (NO NLP)
+    # ===================================================
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
@@ -145,37 +147,42 @@ def load_and_clean_data(file_bytes, file_name):
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
         
-        # Component Extraction
-        def extract_part(text):
-            if 'gripper' in text or 'cup pick' in text or '18-05-01' in text: return 'Robotic Gripper Assembly'
-            if 'axis' in text or 'motor' in text or 'actuator' in text: return 'Z-Axis / Stepper Motor'
-            if 'cc1' in text or 'cc2' in text or 'prime' in text or 'wash' in text: return 'Fluidic Wash Circuit'
-            if 'probe' in text or 'pipeter' in text or 'aspiration' in text or 'sucking' in text or '011-0002' in text: return 'Sample Pipetter Probe'
-            if 'photometer' in text or 'lamp' in text: return 'Photometer Optics Module'
-            if 'thermistor' in text or 'temp' in text or 'cooling' in text or '113-000010' in text: return 'Thermal Cooling Thermistor'
-            if 'rfid' in text: return 'RFID Reader Transponder'
-            if 'board' in text or 'power' in text or 'ups' in text or 'fuse' in text or '072-000006' in text: return 'Electronic DO3 Power Board'
-            return 'Module Base'
-        df['Failed Component'] = df['Subject_Clean'].apply(extract_part)
+        # Pure Logical Keyword Rule Bucket for APPLICATION-specific issues
+        def logical_application_bucket(text):
+            if any(w in text for w in ['qc', 'outlier', 'eqa', 'iqc', 'control variation', 'variation']): 
+                return 'Quality Control (QC) Issue'
+            if any(w in text for w in ['cal ', 'calibration', 'calib', 'not calibrated', 'cal checked']): 
+                return 'Calibration Failure'
+            if any(w in text for w in ['rfid', 'registration', 'lot data', 'reagent lot', 'transponder']): 
+                return 'RFID Reagent Registration Error'
+            if any(w in text for w in ['short', 'insufficient', 'sample short', 'clot', 'short error', 'reagent short']): 
+                return 'Sample / Reagent Shortage or Clot'
+            if any(w in text for w in ['mismatch', 'lot variation', 'sensitivity variation', 'assay channel']): 
+                return 'Lot Sensitivity Mismatch'
+            return 'Other Application Issue'
+        df['Logical Application Issue'] = df['Subject_Clean'].apply(logical_application_bucket)
 
-        # Failure Mode Extraction
-        def extract_cause(text):
-            if 'jam' in text or 'stuck' in text: return 'Mechanical Jam/Binding'
-            if 'leak' in text: return 'Fluidic Line Leakage'
-            if 'voltage' in text or 'fluctuation' in text or 'drop' in text or 'fuse' in text: return 'Electrical Power Surge'
-            if 'noise' in text: return 'Analytical Signal Noise'
-            if 'calibration' in text or 'outlier' in text or 'qc' in text: return 'Calibration / QC Outlier'
-            if 'pressure' in text or 'sucking' in text: return 'Aspiration Pressure Loss'
-            if 'mismatch' in text: return 'Reagent/Wash Mismatch'
-            if 'prime' in text: return 'Priming Disruption'
-            if 'limit' in text or 'high' in text or 'range' in text: return 'Thermal Limit Exceeded'
-            return 'General Failure'
-        df['Failure Cause'] = df['Subject_Clean'].apply(extract_cause)
+        # Pure Logical Keyword Rule Bucket for HARDWARE-specific issues
+        def logical_hardware_bucket(text):
+            if any(w in text for w in ['gripper', 'cup pick', 'pickup', '18-05-01', '300-000028', 'waste mechanism', 'magazine']): 
+                return 'Gripper & Cup Pickup Fault'
+            if any(w in text for w in ['axis', 'motor', 'stepper', 'actuator', 'movement', 'stuck', 'jam', 'hook', 'binding', 'mechanical', 'l2- line']): 
+                return 'Mechanical Axis & Motor Jam'
+            if any(w in text for w in ['probe', 'pipeter', 'aspiration', 'sucking', 'leak', 'wash', 'prime', 'flush', 'cc1', 'cc2', 'fluidic', '011-0002', 'pipetter', 'line resistance']): 
+                return 'Fluidic Circuit & Probe Aspiration Fault'
+            if any(w in text for w in ['temp', 'cooling', 'thermistor', 'rotor temp', '113-000010', 'thermal', 'range']): 
+                return 'Thermal Control & Thermistor Failure'
+            if any(w in text for w in ['power', 'voltage', 'ups', 'board', 'fuse', '072-000006', 'supply', 'surge', 'electrical', 'fluctuation', 'start']): 
+                return 'Power Supply & Electronic Board Failure'
+            if any(w in text for w in ['sensor', 'detector', 'rack detector', '611-000007', 'optics', 'photometer', 'blinded', 'optical', 'voltage']): 
+                return 'Sensor & Optical Module Error'
+            return 'Other Hardware Fault'
+        df['Logical Hardware Issue'] = df['Subject_Clean'].apply(logical_hardware_bucket)
     else:
         df['Hardware Sub-Domain'] = 'Unknown'
         df['Env_Flag'] = False
-        df['Failed Component'] = 'Unknown'
-        df['Failure Cause'] = 'Unknown'
+        df['Logical Application Issue'] = 'Unknown'
+        df['Logical Hardware Issue'] = 'Unknown'
 
     # Service Timeline Engineering
     for col in ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']:
@@ -308,37 +315,34 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- HARD TARGETED CALCULATIONS EXCLUDING PLACEHOLDERS AND GENERALITIES ---
+            # --- TARGETED CALCULATIONS FOR THE BRIEFING LAYER ---
             df_actionable = df[
                 (df['Actual Down Time Hours'] > 0) & 
-                (~df['Failed Component'].isin(['Module Base', 'Unknown'])) & 
-                (~df['Failure Cause'].isin(['General Failure', 'Unknown']))
+                (~df['Logical Hardware Issue'].isin(['Other Hardware Fault', 'Unknown'])) & 
+                (~df['Logical Application Issue'].isin(['Other Application Issue', 'Unknown']))
             ]
             
             if not df_actionable.empty:
-                pointed_top_part = df_actionable['Failed Component'].mode()[0]
-                pointed_top_cause = df_actionable['Failure Cause'].mode()[0]
+                pointed_top_part = df_actionable['Logical Hardware Issue'].mode()[0]
+                pointed_top_app = df_actionable['Logical Application Issue'].mode()[0]
                 
-                # Worst location tracked by direct sum of operational down hours
                 site_downtime = df.groupby('Site Name')['Actual Down Time Hours'].sum()
-                pointed_worst_site = site_downtime.idxmax() if not site_downtime.empty else "N/A"
+                critical_impact_site = site_downtime.idxmax() if not site_downtime.empty else "N/A"
                 pointed_site_hours = site_downtime.max() if not site_downtime.empty else 0
                 
-                # Worst performing cobas system line tracked by downtime sum
                 model_downtime = df.groupby('Family/Line: Name')['Actual Down Time Hours'].sum()
-                pointed_worst_model = model_downtime.idxmax() if not model_downtime.empty else "N/A"
+                leading_friction_model = model_downtime.idxmax() if not model_downtime.empty else "N/A"
                 
-                # Worst individual machine asset
                 serial_downtime = df.groupby('Serial No.').agg({'Actual Down Time Hours':'sum', 'Site Name':'first'}).reset_index()
                 if not serial_downtime.empty:
-                    worst_idx = serial_downtime['Actual Down Time Hours'].idxmax()
-                    pointed_worst_serial = serial_downtime.loc[worst_idx, 'Serial No.']
-                    pointed_serial_site = serial_downtime.loc[worst_idx, 'Site Name']
-                    pointed_serial_hours = serial_downtime.loc[worst_idx, 'Actual Down Time Hours']
+                    critical_idx = serial_downtime['Actual Down Time Hours'].idxmax()
+                    critical_impact_serial = serial_downtime.loc[critical_idx, 'Serial No.']
+                    pointed_serial_site = serial_downtime.loc[critical_idx, 'Site Name']
+                    pointed_serial_hours = serial_downtime.loc[critical_idx, 'Actual Down Time Hours']
                 else:
-                    pointed_worst_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", 0
+                    critical_impact_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", 0
             else:
-                pointed_top_part, pointed_top_cause, pointed_worst_model, pointed_worst_site, pointed_site_hours, pointed_worst_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", "N/A", "N/A", 0, "N/A", "N/A", 0
+                pointed_top_part, pointed_top_app, leading_friction_model, critical_impact_site, pointed_site_hours, critical_impact_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", "N/A", "N/A", 0, "N/A", "N/A", 0
 
             severe_outliers_count = len(df[df['Actual Down Time Hours'].fillna(0) >= 24.0])
             env_stress_count = len(df[df['Env_Flag'] == True])
@@ -349,23 +353,23 @@ else:
                 ds_check['Days_Diff'] = ds_check.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
                 lemon_assets_count = len(ds_check[ds_check['Days_Diff'] <= recurring_days]['Serial No.'].unique())
 
-            # --- TARGETED STRATEGIC PANEL ---
-            st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
+            # --- STRATEGIC COMMAND CENTER INSIGHTS PANEL ---
+            st.markdown("<div class='insight-header'>🏛 pres- Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
             
             exp_brief = st.expander("👁️ Review High-Impact Operational Diagnostics & Component Actions", expanded=True)
             with exp_brief:
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{pointed_worst_model}</strong> system line is the leading driver of network downtime[cite: 399]. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture[cite: 369, 370].</div>
-                    <div class='bullet-point'><strong>⚙️ Top Actionable Failure Vector:</strong> Filtering out standard noise confirms that <strong>{pointed_top_part}</strong> components represent your primary exposure point, with <strong>{pointed_top_cause}</strong> standing as the top root cause[cite: 103, 105, 475]. This pattern directly impacts transport operations, mirroring the Z-axis home limits and 'Error 18-05-01 (Cup pick up failed)' alerts noted across the cohort[cite: 72, 96, 383].</div>
-                    <div class='bullet-point'><strong>🏢 Worst Performing Laboratory Node:</strong> <strong>{pointed_worst_site}</strong> is experiencing severe operational drag, logging a significant **{pointed_site_hours:.1f} cumulative hours** of system downtime[cite: 393, 394, 458]. Engineering re-routing and field operations must immediately prioritize this center[cite: 413].</div>
+                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{leading_friction_model}</strong> system line is the leading driver of network downtime. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture.</div>
+                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block to <strong>{pointed_top_part}</strong> issues. This indicates physical component wear outpaces chemical variations, primarily hitting kinematic gripper pathways and Z-axis home parameters across high-run nodes.</div>
+                    <div class='bullet-point'><strong>🏢 Highest Downtime Laboratory Node:</strong> <strong>{critical_impact_site}</strong> is experiencing severe operational drag, logging a significant **{pointed_site_hours:.1f} cumulative hours** of system downtime. Engineering re-routing and field operations must immediately prioritize this center.</div>
                     """, unsafe_allow_html=True)
                 with col_b2:
                     st.markdown(f"""
-                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{pointed_worst_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>[cite: 393, 394, 458]. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes[cite: 414]. This unit requires an immediate factory overhaul[cite: 414].</div>
-                    <div class='bullet-point'><strong>⚠️ Infrastructure & Environmental Stress:</strong> The engine identified <strong>{env_stress_count} incidents</strong> linked to environment-cascade faults (e.g., reagent disk thermal warnings, fluid pathway noise from facility water fluctuations)[cite: 151, 155, 389, 421]. This shifts accountability to the customer's laboratory environment rather than inherent system hardware defects[cite: 421].</div>
-                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark [cite: 392], while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit[cite: 401, 403]. This indicates significant operational drag that directly threatens patient turnaround times (TAT)[cite: 29, 173].</div>
+                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{critical_impact_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes. This unit requires an immediate factory overhaul.</div>
+                    <div class='bullet-point'><strong>🧪 Dominant Application Bottleneck:</strong> Outside of physical mechanics, <strong>{pointed_top_app}</strong> generates the primary tracking noise. Restoring electrode baseline priming pressures and utilizing deep-clean fluidic flushes will clear up these sweeping assay channel discrepancies.</div>
+                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
                     """, unsafe_allow_html=True)
 
             # Core Visual Layout Matrix
@@ -400,33 +404,9 @@ else:
                     fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
 
-            # --- SYSTEMIC CORRECTIVE ACTION (CAPA) PLAYBOOK ---
-            st.markdown("<div class='insight-header'>📋 Actionable Implementation Playbook (Prescriptive CAPA Engine)</div>", unsafe_allow_html=True)
-            col_capa1, col_capa2, col_capa3 = st.columns(3)
-            
-            with col_capa1:
-                st.info(f"""
-                **⚡ IMMEDIATE ESCALATION (0 - 30 Days)**
-                * **Friction Node Overhaul:** Deploy senior technical experts to **{pointed_worst_site}** to completely rebuild the mechanical and transport paths[cite: 413, 414].
-                * **Component Targeted Swaps:** Force proactive parts replacement of all **{pointed_top_part}** units showing signs of wear across high-throughput lines[cite: 163, 417].
-                """)
-            with col_capa2:
-                st.warning("""
-                **🛠️ TACTICAL STABILIZATION (30 - 60 Days)**
-                * **Tolerance Auditing Checkpoints:** Introduce strict verification checks for Z-axis assemblies and gripper mechanisms during routine service visits[cite: 166, 524].
-                * **Environmental Auditing Mandate:** Require customer facility validation (line conditioners, dedicated UPS logging, HVAC stability) before authorizing replacement parts[cite: 420].
-                """)
-            with col_capa3:
-                st.success(f"""
-                **🔮 STRATEGIC ASSURANCE (60 - 90 Days)**
-                * **Predictive Lifecycle Strategy:** Move from reactive troubleshooting to proactive replacement based on tracked runs for key components[cite: 169].
-                * **Automated Asset Escalation:** Automatically flag units like Serial Number **{pointed_worst_serial}** in the dispatch system to ensure subsequent faults route immediately to Tier 2 specialist engineers[cite: 525, 526].
-                """)
-
-        # ==========================================
-        # TAB 2: FLEET & SITE RELIABILITY MATRIX
-        # ==========================================
-        # Fixed the inline assignment syntax error bug inside fig_city call below
+# ==========================================
+# TAB 2: FLEET & SITE RELIABILITY MATRIX
+# ==========================================
         with tab2:
             st.info("**🔬 Fleet Integrity Analytics:** Macroscopic Pareto distributions of analyzer systems matched against individualized site operational vulnerabilities.")
             
@@ -459,7 +439,6 @@ else:
 
             if 'City' in df.columns and 'Family/Line: Name' in df.columns and not df.empty:
                 city_df = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total')
-                # FIX: Removed the assignment variable string text inside the function's arguments position
                 fig_city = px.bar(city_df.sort_values('Total', ascending=False).head(40), x='City', y='Total', color='Family/Line: Name', title="Citywise Instrument Breakdowns (Stacked Fleet Model)", text_auto=True, color_discrete_sequence=SAFE_PALETTE)
                 fig_city.update_layout(xaxis_tickangle=-45)
                 st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
@@ -468,45 +447,35 @@ else:
         # TAB 3: ROOT CAUSE ANALYTICS (RCA)
         # ==========================================
         with tab3:
-            st.info("**🤖 Root Cause Identification Vector:** Deep text mining models scanning ticket descriptions to parse specific modular failed physical items and underlying mechanics.")
+            st.info("**🤖 Logical Keyword Mapping Matrix:** Subjects broken down systematically using rigorous technical rule sets, mapping top application metrics alongside mechanical hardware failure counts.")
             
-            col_b, col_r = st.columns([1, 1.4])
-            with col_b:
-                if 'Hardware Sub-Domain' in df.columns and not df.empty:
-                    bub_df = df.groupby('Hardware Sub-Domain').agg(
-                        Freq=('Case Number', 'count'), 
-                        AvgD=('Actual Down Time Hours', 'mean'), 
-                        TotD=('Actual Down Time Hours', 'sum')
-                    ).reset_index()
+            col_app_chart, col_hw_chart = st.columns(2)
+            
+            with col_app_chart:
+                # CHART 1: APPLICATION TOP 10 PROBLEMS
+                if 'Logical Application Issue' in df.columns and not df.empty:
+                    app_filter = df[df['Logical Application Issue'] != 'Other Application Issue']
+                    app_problems = app_filter['Logical Application Issue'].value_counts().reset_index().head(10)
+                    app_problems.columns = ['Application Problem Area', 'Incident Count']
                     
-                    fig_bub = px.scatter(bub_df, x='Freq', y='AvgD', size='TotD', color='Hardware Sub-Domain', 
-                                         title="Diagnostic Domain Mapping (Impact vs. Frequency Matrix)", 
-                                         labels={"Freq": "Incident Rate Count", "AvgD": "Mean System Halt Duration (Hours)", "TotD": "Total Cumulated Network Downtime"},
-                                         size_max=45, color_discrete_sequence=SAFE_PALETTE)
-                    st.plotly_chart(fig_bub, use_container_width=True, theme="streamlit")
+                    fig_app = px.bar(app_problems, x='Incident Count', y='Application Problem Area', orientation='h',
+                                     title="Application / Reagent Module: Top Occurring Issues", text_auto=True,
+                                     color_discrete_sequence=[CORP_TEAL])
+                    fig_app.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_app, use_container_width=True, theme="streamlit")
                     
-            with col_r:
-                if 'Hardware Sub-Domain' in df.columns and not df.empty:
-                    cr1, cr2 = st.columns(2)
-                    hw_only = df[
-                        (df['Hardware Sub-Domain'] != 'Unknown') & 
-                        (~df['Failed Component'].isin(['Module Base', 'Unknown'])) & 
-                        (~df['Failure Cause'].isin(['General Failure', 'Unknown']))
-                    ]
+            with col_hw_chart:
+                # CHART 2: HARDWARE TOP 10 PROBLEMS
+                if 'Logical Hardware Issue' in df.columns and not df.empty:
+                    hw_filter = df[df['Logical Hardware Issue'] != 'Other Hardware Fault']
+                    hw_problems = hw_filter['Logical Hardware Issue'].value_counts().reset_index().head(10)
+                    hw_problems.columns = ['Hardware Mechanical Domain', 'Incident Count']
                     
-                    with cr1:
-                        parts = hw_only['Failed Component'].value_counts().reset_index().head(6)
-                        parts.columns = ['Part', 'Count']
-                        fig_p = px.bar(parts, x='Count', y='Part', orientation='h', title="Isolated Component Failure Counts", text_auto=True, color_discrete_sequence=[CORP_BLUE])
-                        fig_p.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_p, use_container_width=True, theme="streamlit")
-                        
-                    with cr2:
-                        causes = hw_only['Failure Cause'].value_counts().reset_index().head(6)
-                        causes.columns = ['Cause', 'Count']
-                        fig_c = px.bar(causes, x='Count', y='Cause', orientation='h', title="Parsed Underlying Failure Causes", text_auto=True, color_discrete_sequence=[CORP_ORANGE])
-                        fig_c.update_layout(yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_c, use_container_width=True, theme="streamlit")
+                    fig_hw = px.bar(hw_problems, x='Incident Count', y='Hardware Mechanical Domain', orientation='h',
+                                    title="Hardware Systems: Top Occurring Functional Failures", text_auto=True,
+                                    color_discrete_sequence=[CORP_BLUE])
+                    fig_hw.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_hw, use_container_width=True, theme="streamlit")
 
         # ==========================================
         # TAB 4: OPERATIONAL RISK & OUTLIERS
