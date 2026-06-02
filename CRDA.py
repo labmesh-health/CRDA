@@ -5,14 +5,47 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pdfplumber
 import io
-import re
-from collections import Counter
 
 # ==========================================
-# PAGE CONFIGURATION
+# PAGE CONFIGURATION & CUSTOM CSS (Pillowed Cards)
 # ==========================================
 st.set_page_config(page_title="Customer Rexis Diagnostic Dashboard", layout="wide", initial_sidebar_state="expanded")
-st.title("🔬 Customer Rexis Diagnostic & Diagnostic Dashboard")
+
+# Inject Custom CSS for the pillowed/shadowed KPI Cards supporting Dark/Light Mode
+st.markdown("""
+<style>
+    .kpi-card {
+        background-color: var(--background-color);
+        border: 1px solid var(--secondary-background-color);
+        border-radius: 20px;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.06);
+        padding: 25px 15px;
+        text-align: center;
+        margin-bottom: 20px;
+        transition: transform 0.3s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 25px rgba(0,0,0,0.18), 0 5px 10px rgba(0,0,0,0.08);
+    }
+    .kpi-value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #4E79A7;
+        margin-bottom: 5px;
+    }
+    .kpi-label {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-color);
+        opacity: 0.7;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🔬 Customer Rexis Diagnostic Dashboard")
 
 # --- PROFESSIONAL COLOR PALETTE ---
 CORP_BLUE = '#4E79A7'
@@ -73,10 +106,11 @@ def load_and_clean_data(file_bytes, file_name):
     else:
         df['System Down Yes/No'] = 'Unknown'
 
-    # 3. NLP TEXT MINING (Hardware Sub-Domain Categorization)
+    # 3. ADVANCED NLP TEXT MINING (Sub-Domains, Parts, Causes, Fixes)
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
+        # Sub-Domain
         def categorize_hardware(text):
             if any(word in text for word in ['gripper', 'axis', 'movement', 'rack', 'motor', 'mechanical', 'actuator', 'jam', 'stuck', 'pick up']):
                 return 'Kinematic / Robotic'
@@ -87,29 +121,52 @@ def load_and_clean_data(file_bytes, file_name):
             elif any(word in text for word in ['rfid', 'noise', 'outlier', 'calibration', 'photometer', 'sensor', 'lld', 'error', 'qc']):
                 return 'Analytical / Sensor'
             else:
-                return 'General / Unclassified'
-                
+                return 'General Hardware'
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
-        
-        # Identify Environmental Flags per site
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
+
+        # Extracted Part
+        def extract_part(text):
+            parts = ['gripper', 'motor', 'probe', 'sensor', 'lamp', 'board', 'valve', 'pump', 'rack', 'disk', 'thermistor', 'rfid', 'incubator', 'pipetter']
+            found = [p.capitalize() for p in parts if p in text]
+            return found[0] if found else 'Module Base'
+        df['Failed Component'] = df['Subject_Clean'].apply(extract_part)
+
+        # Extracted Cause
+        def extract_cause(text):
+            causes = ['jam', 'leak', 'temperature', 'voltage', 'noise', 'calibration', 'outlier', 'malfunction', 'clot', 'pressure', 'crash']
+            found = [c.capitalize() for c in causes if c in text]
+            return found[0] if found else 'General Failure'
+        df['Failure Cause'] = df['Subject_Clean'].apply(extract_cause)
+
+        # Extracted Fix (if Remarks exist, search there too)
+        remarks_col = 'Remarks' if 'Remarks' in df.columns else 'Subject'
+        df['Remarks_Clean'] = df[remarks_col].fillna('').astype(str).str.lower()
+        def extract_fix(row):
+            combined_text = row['Subject_Clean'] + " " + row['Remarks_Clean']
+            fixes = ['replace', 'clean', 'recalibrate', 'reset', 'update', 'flush', 'adjust', 'align', 'restart']
+            found = [f.capitalize() for f in fixes if f in combined_text]
+            return found[0] if found else 'Standard PM'
+        df['Prescribed Fix'] = df.apply(extract_fix, axis=1)
+        
     else:
         df['Hardware Sub-Domain'] = 'Unknown'
         df['Env_Flag'] = False
+        df['Failed Component'] = 'Unknown'
+        df['Failure Cause'] = 'Unknown'
+        df['Prescribed Fix'] = 'Unknown'
 
-    # 4. AUTO-DETECT DATE FORMATS
-    date_columns = ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']
-    for col in date_columns:
+    # 4. DATE FORMATS & MISSING DATA
+    for col in ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce', format='mixed')
-        
-    # 5. MISSING DATA LOGIC
+            
     if 'Labour Start Date' in df.columns and 'Date/Time Opened' in df.columns:
         df['Labour Start Date'] = df['Labour Start Date'].fillna(df['Date/Time Opened'] + pd.Timedelta(hours=2))
     if 'Labour End Date' in df.columns and 'Labour Start Date' in df.columns:
         df['Labour End Date'] = df['Labour End Date'].fillna(df['Labour Start Date'] + pd.Timedelta(hours=4))
     
-    # 6. CALCULATE TIMES
+    # 5. TIME & SLA CALCULATION
     if all(c in df.columns for c in ['Labour Start Date', 'Date/Time Opened', 'Labour End Date']):
         df['Response_Hours'] = (df['Labour Start Date'] - df['Date/Time Opened']).dt.total_seconds() / 3600
         df['Resolution_Hours'] = (df['Labour End Date'] - df['Date/Time Opened']).dt.total_seconds() / 3600
@@ -120,12 +177,17 @@ def load_and_clean_data(file_bytes, file_name):
         df['Resolved_Date'] = df['Labour End Date'].dt.date
         df['Days_to_Resolve'] = (df['Resolved_Date'] - df['Opened_Date']).apply(lambda x: x.days if pd.notnull(x) else np.nan)
         
-        def resolve_category(days):
-            if pd.isnull(days): return "Unknown"
-            if days == 0: return "Same Day"
-            elif days == 1: return "Next Day"
-            else: return f"{int(days)} Days Later"
-        df['Resolution_Speed'] = df['Days_to_Resolve'].apply(resolve_category)
+        df['Resolution_Speed'] = df['Days_to_Resolve'].apply(lambda d: "Unknown" if pd.isnull(d) else ("Same Day" if d == 0 else ("Next Day" if d == 1 else f"{int(d)} Days Later")))
+        
+        def categorize_time(hours):
+            if pd.isnull(hours): return "Unknown"
+            if hours <= 24: return "< 24 Hours"
+            elif hours <= 48: return "24 - 48 Hours"
+            elif hours <= 72: return "48 - 72 Hours"
+            elif hours <= 96: return "72 - 96 Hours"
+            else: return "> 96 Hours"
+            
+        df['Resolution Bucket'] = df['Resolution_Hours'].apply(categorize_time)
 
     if 'Actual Down Time' in df.columns:
         df['Actual Down Time Hours'] = pd.to_timedelta(df['Actual Down Time'].astype(str), errors='coerce').dt.total_seconds() / 3600
@@ -138,13 +200,11 @@ if uploaded_file is None:
     st.stop()
 
 with st.spinner("Extracting and processing data..."):
-    file_bytes = uploaded_file.getvalue()
-    df_raw = load_and_clean_data(file_bytes, uploaded_file.name)
+    df_raw = load_and_clean_data(uploaded_file.getvalue(), uploaded_file.name)
 
 min_date = df_raw['Date/Time Opened'].min()
 max_date = df_raw['Date/Time Opened'].max()
-total_days = (max_date - min_date).days if pd.notnull(max_date) else 143
-total_timeline_hours = max(total_days * 24, 24)
+total_timeline_hours = max(((max_date - min_date).days if pd.notnull(max_date) else 143) * 24, 24)
 
 # ==========================================
 # SIDEBAR FILTERS
@@ -153,12 +213,7 @@ st.sidebar.header("⚙️ Flexible Data Filters")
 min_d, max_d = min_date.date(), max_date.date()
 date_range = st.sidebar.date_input("Select Date Range", [min_d, max_d], min_value=min_d, max_value=max_d)
 
-if len(date_range) == 2:
-    start_date, end_date = date_range
-    mask = (df_raw['Date/Time Opened'].dt.date >= start_date) & (df_raw['Date/Time Opened'].dt.date <= end_date)
-    df = df_raw.loc[mask]
-else:
-    df = df_raw
+df = df_raw[(df_raw['Date/Time Opened'].dt.date >= date_range[0]) & (df_raw['Date/Time Opened'].dt.date <= date_range[1])] if len(date_range) == 2 else df_raw
 
 selected_region = st.sidebar.multiselect("Region", options=df_raw['Region'].dropna().unique(), default=df_raw['Region'].dropna().unique())
 selected_type = st.sidebar.multiselect("Complaint Type", options=df_raw['Type of Complaint'].dropna().unique(), default=df_raw['Type of Complaint'].dropna().unique())
@@ -166,205 +221,156 @@ selected_type = st.sidebar.multiselect("Complaint Type", options=df_raw['Type of
 df = df[df['Region'].isin(selected_region) & df['Type of Complaint'].isin(selected_type)]
 
 st.sidebar.markdown("---")
-st.sidebar.header("🔄 Recurring Issues Logic")
-recurring_days = st.sidebar.slider("Flag breakdowns recurring within (Days):", min_value=7, max_value=90, value=30, step=1)
+recurring_days = st.sidebar.slider("Flag recurring breakdowns within (Days):", 7, 90, 30, 1)
 
 # ==========================================
-# CAPA GENERATOR (Automated AI Insights)
+# CONSOLIDATED DASHBOARD TABS
 # ==========================================
-def generate_capa(data):
-    if data.empty or 'Hardware Sub-Domain' not in data.columns:
-        return "Not enough data to generate CAPA."
-    
-    hw_only = data[data['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
-    if hw_only.empty:
-        return "**🤖 Diagnostic Insight:** No hardware failures detected in current filter. System stable."
-    
-    top_domain = hw_only['Hardware Sub-Domain'].mode()[0]
-    
-    capa_text = f"**🚨 Primary Failure Domain Detected: {top_domain}**\n\n"
-    if top_domain == 'Kinematic / Robotic':
-        capa_text += "➤ **Immediate (Reactive):** Inspect and replace degraded grippers, Z-axis steppers, and rack transfer motors on targeted units.\n"
-        capa_text += "➤ **30-Day (Protocol):** Enhance mechanical tolerance checkpoints during PM visits.\n"
-        capa_text += "➤ **90-Day (Proactive):** Institute proactive replacement schedule for robotic components exceeding 15 million cycles."
-    elif top_domain == 'Fluidic / Thermal':
-        capa_text += "➤ **Immediate (Reactive):** Flush fluidic circuits, verify probe aspiration pressure, and replace faulty thermistors.\n"
-        capa_text += "➤ **30-Day (Protocol):** Integrate targeted thermal limit tests and wash-station alignments into PM routines.\n"
-        capa_text += "➤ **90-Day (Proactive):** Audit water quality and ambient lab temperatures correlating with cooling system stress."
-    elif top_domain == 'Environmental / Power':
-        capa_text += "➤ **Immediate (Reactive):** Deploy line-conditioners to sites with recurring ADC noise and voltage drops.\n"
-        capa_text += "➤ **30-Day (Protocol):** Execute Environmental Hardening audits (AC stability, vacuum pressure) at Top 20 sites.\n"
-        capa_text += "➤ **90-Day (Proactive):** Require lab UPS logs prior to replacing internal instrument power boards."
-    else:
-        capa_text += "➤ **Immediate (Reactive):** Recalibrate affected sensors and clear optical pathways.\n"
-        capa_text += "➤ **30-Day (Protocol):** Monitor RFID and LLD (Liquid Level Detection) module failure rates.\n"
-        capa_text += "➤ **90-Day (Proactive):** Update firmware to reduce false-positive analytical flags."
-        
-    return capa_text
-
-# ==========================================
-# DASHBOARD TABS
-# ==========================================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "📊 Tab 1: Exec Health", 
-    "🎯 Tab 2: CAPA & Impact vs Frequency", 
-    "🛠️ Tab 3: Instrument Reliability",
-    "🏢 Tab 4: Top Sites (Env Flags)", 
-    "🌆 Tab 5: Citywise",
-    "🔄 Tab 6: Recurring Breakdowns",
-    "🔍 Tab 7: Serial Matrix",
-    "🚨 Tab 8: Severe Outliers"
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 1. Executive Dashboard", 
+    "🏭 2. Network & Fleet Reliability", 
+    "🔍 3. Root Cause Analytics (RCA)",
+    "🚨 4. Serial Matrix & Outliers"
 ])
 
-# --- TAB 1: EXECUTIVE HEALTH ---
+# --- TAB 1: EXECUTIVE DASHBOARD ---
 with tab1:
-    total_down_hours = df['Actual Down Time Hours'].sum() if 'Actual Down Time Hours' in df.columns else 0
-    unique_machines = df['Serial No.'].nunique()
-    avg_down_per_machine = total_down_hours / unique_machines if unique_machines > 0 else 0
-    uptime_pct = ((total_timeline_hours - avg_down_per_machine) / total_timeline_hours) * 100
+    st.info("**🤖 Executive Summary:** System health tracking and high-level Service Level Agreement (SLA) compliance.")
+    
+    # Calculate KPIs
+    uptime_pct = ((total_timeline_hours - (df['Actual Down Time Hours'].sum() / max(df['Serial No.'].nunique(), 1))) / total_timeline_hours) * 100
+    same_day_pct = (len(df[df['Resolution_Speed'] == 'Same Day']) / max(len(df), 1)) * 100
+    avg_downtime = df['Actual Down Time Hours'].mean()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Cases Opened", len(df))
-    col2.metric("Average Uptime %", f"{uptime_pct:.2f}%")
-    if 'Resolution_Speed' in df.columns:
-        same_day_pct = (len(df[df['Resolution_Speed'] == 'Same Day']) / len(df) * 100) if len(df) > 0 else 0
-        col3.metric("SLA (Same-Day) Compliance %", f"{same_day_pct:.1f}%")
+    # PILLOWED KPI CARDS (HTML)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.markdown(f"<div class='kpi-card'><div class='kpi-value'>{len(df)}</div><div class='kpi-label'>Total Support Cases</div></div>", unsafe_allow_html=True)
+    col2.markdown(f"<div class='kpi-card'><div class='kpi-value'>{uptime_pct:.2f}%</div><div class='kpi-label'>Network Uptime (24h)</div></div>", unsafe_allow_html=True)
+    col3.markdown(f"<div class='kpi-card'><div class='kpi-value'>{same_day_pct:.1f}%</div><div class='kpi-label'>Same-Day Fix Rate</div></div>", unsafe_allow_html=True)
+    col4.markdown(f"<div class='kpi-card'><div class='kpi-value' style='color:{CORP_RED};'>{avg_downtime:.1f}h</div><div class='kpi-label'>Avg Downtime / Case</div></div>", unsafe_allow_html=True)
 
-    if 'Region' in df.columns:
-        reg_counts = df['Region'].value_counts().reset_index()
-        reg_counts.columns = ['Region', 'Complaints']
-        fig_bar = px.bar(reg_counts, x='Region', y='Complaints', title="Geographic Case Volumes", text_auto=True, color_discrete_sequence=[CORP_BLUE])
+    col_map, col_donut, col_trend = st.columns([1.5, 1, 1.5])
+    
+    with col_map:
+        reg_counts = df['Region'].value_counts().reset_index().rename(columns={'index':'Region', 'Region':'Complaints'})
+        fig_bar = px.bar(reg_counts, x='Region', y='Complaints', title="Geographic Case Load", text_auto=True, color_discrete_sequence=[CORP_BLUE])
         fig_bar.update_traces(textposition='outside')
         st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
 
-# --- TAB 2: CAPA & IMPACT VS FREQUENCY ---
+    with col_donut:
+        fig_donut = px.pie(df, names='Type of Complaint', hole=0.5, title="Issue Breakdown", color_discrete_sequence=[CORP_TEAL, CORP_ORANGE, CORP_BLUE])
+        fig_donut.update_traces(textinfo='percent+label', textposition='inside')
+        st.plotly_chart(fig_donut, use_container_width=True, theme="streamlit")
+        
+    with col_trend:
+        daily_df = df.groupby('Opened_Date').agg(Total=('Case Number', 'count'), Down=('System Down Yes/No', lambda x: (x == 'Down').sum())).reset_index()
+        fig_trend = go.Figure()
+        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Total'], mode='lines+markers', name='Total Opened', line=dict(color=CORP_BLUE)))
+        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Down'], mode='lines+markers', name='Systems Down', line=dict(color=CORP_RED)))
+        fig_trend.update_layout(title="Daily Open Cases vs. System Downs", xaxis_title="Date", margin=dict(l=0, r=0, t=40, b=0))
+        st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
+
+# --- TAB 2: NETWORK & FLEET RELIABILITY ---
 with tab2:
-    st.info(generate_capa(df))
+    st.info("**🤖 Fleet Insights:** Identifies problematic product lines, highest-risk customer sites (80/20 rule), and citywide failure density. ⚠️ indicates environmental risks like voltage or temperature drops.")
     
-    col_chart1, col_chart2 = st.columns(2)
-    with col_chart1:
-        # IMPACT VS FREQUENCY BUBBLE CHART
-        if 'Hardware Sub-Domain' in df.columns:
-            bubble_df = df.groupby('Hardware Sub-Domain').agg(
-                Frequency=('Case Number', 'count'),
-                Avg_Downtime=('Actual Down Time Hours', 'mean'),
-                Total_Downtime=('Actual Down Time Hours', 'sum')
-            ).reset_index()
-            
-            fig_bubble = px.scatter(bubble_df, x='Frequency', y='Avg_Downtime', size='Total_Downtime', color='Hardware Sub-Domain',
-                                    title="Impact vs. Frequency (The Diagnostic Quadrant)",
-                                    labels={"Frequency": "Total Number of Breakdowns", "Avg_Downtime": "Avg Downtime per Incident (Hours)"},
-                                    size_max=60, color_discrete_sequence=SAFE_PALETTE)
-            st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
-            
-    with col_chart2:
-        hw_only = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
-        if not hw_only.empty:
-            fig_hw_donut = px.pie(hw_only, names='Hardware Sub-Domain', hole=0.4, title="Root Cause Breakdown (Hardware Only)", color_discrete_sequence=SAFE_PALETTE)
-            fig_hw_donut.update_traces(textinfo='label+percent')
-            st.plotly_chart(fig_hw_donut, use_container_width=True, theme="streamlit")
-
-# --- TAB 3: INSTRUMENT RELIABILITY ---
-with tab3:
-    col_chart3, col_chart4 = st.columns(2)
-    with col_chart3:
+    col_pareto1, col_pareto2 = st.columns(2)
+    with col_pareto1:
+        # Product Family Pareto
         fam_counts = df.groupby('Family/Line: Name').size().reset_index(name='Complaints').sort_values(by='Complaints', ascending=False).head(10)
-        fam_counts['Cumulative %'] = fam_counts['Complaints'].cumsum() / fam_counts['Complaints'].sum() * 100
-        
-        fig_fam_pareto = go.Figure()
-        fig_fam_pareto.add_trace(go.Bar(x=fam_counts['Family/Line: Name'], y=fam_counts['Complaints'], name="Complaints", marker_color=CORP_BLUE, text=fam_counts['Complaints'], textposition='auto'))
-        fig_fam_pareto.add_trace(go.Scatter(x=fam_counts['Family/Line: Name'], y=fam_counts['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers+text', text=fam_counts['Cumulative %'].round(1).astype(str)+'%', textposition='top center', line=dict(color=CORP_RED, width=2.5)))
-        fig_fam_pareto.update_layout(title="Top Problematic Product Families", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), xaxis_tickangle=-45)
-        st.plotly_chart(fig_fam_pareto, use_container_width=True, theme="streamlit")
-        
-    with col_chart4:
-        down_ratio = df.groupby(['Family/Line: Name', 'System Down Yes/No']).size().reset_index(name='Count')
-        top_fams = fam_counts['Family/Line: Name'].tolist()
-        down_ratio = down_ratio[down_ratio['Family/Line: Name'].isin(top_fams)]
-        
-        fig_down = px.bar(down_ratio, x='Family/Line: Name', y='Count', color='System Down Yes/No', barmode='stack', text_auto=True, title="System Down Ratio by Product Line", color_discrete_map={'Down': CORP_RED, 'Not Down': CORP_TEAL})
-        st.plotly_chart(fig_down, use_container_width=True, theme="streamlit")
+        fam_counts['Cum%'] = fam_counts['Complaints'].cumsum() / fam_counts['Complaints'].sum() * 100
+        fig_fam = go.Figure()
+        fig_fam.add_trace(go.Bar(x=fam_counts['Family/Line: Name'], y=fam_counts['Complaints'], name="Complaints", marker_color=CORP_BLUE, text=fam_counts['Complaints'], textposition='auto'))
+        fig_fam.add_trace(go.Scatter(x=fam_counts['Family/Line: Name'], y=fam_counts['Cum%'], name="Cumulative %", yaxis='y2', mode='lines+markers+text', text=fam_counts['Cum%'].round(1).astype(str)+'%', textposition='top center', line=dict(color=CORP_RED)))
+        fig_fam.update_layout(title="Product Line Breakdown (Pareto)", yaxis2=dict(overlaying='y', side='right', range=[0, 115]))
+        st.plotly_chart(fig_fam, use_container_width=True, theme="streamlit")
 
-# --- TAB 4: TOP SITES (ENV FLAGS) ---
+    with col_pareto2:
+        # Top Sites Pareto (80/20) with Env Flags
+        hw_df = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
+        if not hw_df.empty:
+            env_sites = hw_df[hw_df['Env_Flag'] == True]['Site Name'].unique()
+            acc_df = hw_df.groupby('Site Name').size().reset_index(name='Complaints').sort_values(by='Complaints', ascending=False).head(15)
+            acc_df['Site Display'] = acc_df['Site Name'].apply(lambda x: f"⚠️ {x}" if x in env_sites else x)
+            acc_df['Cum%'] = acc_df['Complaints'].cumsum() / acc_df['Complaints'].sum() * 100
+            
+            fig_site = go.Figure()
+            fig_site.add_trace(go.Bar(x=acc_df['Site Display'], y=acc_df['Complaints'], name="Hardware Complaints", marker_color=CORP_BLUE, text=acc_df['Complaints'], textposition='auto'))
+            fig_site.add_trace(go.Scatter(x=acc_df['Site Display'], y=acc_df['Cum%'], name="Cum %", yaxis='y2', mode='lines+markers', line=dict(color=CORP_RED)))
+            fig_site.update_layout(title="Top 15 Problematic Customer Sites (Hardware)", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), xaxis_tickangle=-45)
+            st.plotly_chart(fig_site, use_container_width=True, theme="streamlit")
+
+    # Citywise Stacked
+    city_inst = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total')
+    fig_city = px.bar(city_inst.sort_values(by='Total', ascending=False).head(40), x='City', y='Total', color='Family/Line: Name', title="Citywise Instrument Breakdowns (Stacked)", text_auto=True, color_discrete_sequence=SAFE_PALETTE)
+    st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
+
+# --- TAB 3: ROOT CAUSE ANALYTICS (RCA) ---
+with tab3:
+    st.info("**🤖 Diagnostic NLP Engine:** Text-mining ticket subjects to isolate the exact Component failing, the underlying Cause, and the most frequent field Fix.")
+    
+    col_bubble, col_rca = st.columns([1, 1.5])
+    with col_bubble:
+        bubble_df = df.groupby('Hardware Sub-Domain').agg(Freq=('Case Number', 'count'), Avg_Down=('Actual Down Time Hours', 'mean'), Tot_Down=('Actual Down Time Hours', 'sum')).reset_index()
+        fig_bubble = px.scatter(bubble_df, x='Freq', y='Avg_Down', size='Tot_Down', color='Hardware Sub-Domain', title="Impact vs. Frequency Quadrant", labels={"Freq": "Breakdown Count", "Avg_Down": "Avg Downtime (Hrs)"}, size_max=50, color_discrete_sequence=SAFE_PALETTE)
+        st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
+
+    with col_rca:
+        # Top Parts, Causes, Fixes Sub-columns
+        hw_filter = df[df['Hardware Sub-Domain'] != 'Unknown']
+        r1, r2, r3 = st.columns(3)
+        
+        # 1. Top Parts
+        part_df = hw_filter['Failed Component'].value_counts().reset_index().head(6)
+        part_df.columns = ['Part', 'Count']
+        part_df = part_df[part_df['Part'] != 'Module Base'] # Hide defaults if others exist
+        fig_p = px.bar(part_df, x='Count', y='Part', orientation='h', title="Top Failed Parts", text_auto=True, color_discrete_sequence=[CORP_BLUE])
+        fig_p.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=30, b=0))
+        r1.plotly_chart(fig_p, use_container_width=True, theme="streamlit")
+
+        # 2. Top Causes
+        cause_df = hw_filter['Failure Cause'].value_counts().reset_index().head(6)
+        cause_df.columns = ['Cause', 'Count']
+        cause_df = cause_df[cause_df['Cause'] != 'General Failure']
+        fig_c = px.bar(cause_df, x='Count', y='Cause', orientation='h', title="Top Failure Modes", text_auto=True, color_discrete_sequence=[CORP_ORANGE])
+        fig_c.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=30, b=0))
+        r2.plotly_chart(fig_c, use_container_width=True, theme="streamlit")
+
+        # 3. Top Fixes
+        fix_df = hw_filter['Prescribed Fix'].value_counts().reset_index().head(6)
+        fix_df.columns = ['Fix', 'Count']
+        fix_df = fix_df[fix_df['Fix'] != 'Standard PM']
+        fig_f = px.bar(fix_df, x='Count', y='Fix', orientation='h', title="Top Prescribed Fixes", text_auto=True, color_discrete_sequence=[CORP_TEAL])
+        fig_f.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=30, b=0))
+        r3.plotly_chart(fig_f, use_container_width=True, theme="streamlit")
+
+# --- TAB 4: SERIAL MATRIX & OUTLIERS ---
 with tab4:
-    st.info("**🤖 AI Insight:** Sites marked with ⚠️ indicate known 'Environmental/Power' issues (Voltage drops, temp limits). Hardening these labs will prevent future hardware failures.")
-    hw_df = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
-    if not hw_df.empty:
-        # Calculate Env Flags per site
-        env_sites = hw_df[hw_df['Env_Flag'] == True]['Site Name'].unique()
-        
-        account_df = hw_df.groupby('Site Name').size().reset_index(name='Hardware Complaints')
-        account_df = account_df.sort_values(by='Hardware Complaints', ascending=False).head(20)
-        
-        # Add warning icon to Site Name if env flag exists
-        account_df['Site Display'] = account_df['Site Name'].apply(lambda x: f"⚠️ {x}" if x in env_sites else x)
-        account_df['Cumulative %'] = account_df['Hardware Complaints'].cumsum() / account_df['Hardware Complaints'].sum() * 100
-        
-        fig_pareto = go.Figure()
-        fig_pareto.add_trace(go.Bar(x=account_df['Site Display'], y=account_df['Hardware Complaints'], name="Hardware Complaints", marker_color=CORP_BLUE, text=account_df['Hardware Complaints'], textposition='auto'))
-        fig_pareto.add_trace(go.Scatter(x=account_df['Site Display'], y=account_df['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers+text', text=account_df['Cumulative %'].round(1).astype(str)+'%', textposition='top center', line=dict(color=CORP_RED, width=2.5)))
-        fig_pareto.update_layout(title="Top 20 Sites by Hardware Issues (⚠️ = Environmental Risk)", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), xaxis_tickangle=-45)
-        st.plotly_chart(fig_pareto, use_container_width=True, theme="streamlit")
-
-# --- TAB 5: CITYWISE BREAKDOWN ---
-with tab5:
-    if 'City' in df.columns and 'Family/Line: Name' in df.columns:
-        city_inst = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total Breakdowns')
-        city_inst = city_inst.sort_values(by='Total Breakdowns', ascending=False).head(50)
-        fig_city = px.bar(city_inst, x='City', y='Total Breakdowns', color='Family/Line: Name', title="Citywise Instrument Breakdowns", text_auto=True, barmode='stack', color_discrete_sequence=SAFE_PALETTE)
-        st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
-
-# --- TAB 6: RECURRING BREAKDOWNS ---
-with tab6:
-    st.info(f"**🤖 AI Insight:** The 'Lemon' machine tracker. Flagging instruments requiring service again within **{recurring_days} days**.")
-    df_sorted = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
-    df_sorted['Days_Since_Last_Issue'] = df_sorted.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
-    recurring_df = df_sorted[df_sorted['Days_Since_Last_Issue'] <= recurring_days]
+    col_t1, col_t2 = st.columns(2)
     
-    if not recurring_df.empty:
-        recurring_summary = recurring_df.groupby(['Serial No.', 'Family/Line: Name', 'Site Name']).agg(
-            Recurring_Incidents=('Case Number', 'count'),
-            Avg_Days_Between_Failures=('Days_Since_Last_Issue', 'mean')
-        ).reset_index().sort_values(by='Recurring_Incidents', ascending=False)
-        recurring_summary['Avg_Days_Between_Failures'] = recurring_summary['Avg_Days_Between_Failures'].round(1)
-        st.dataframe(recurring_summary, use_container_width=True)
+    with col_t1:
+        st.warning(f"**🍋 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
+        df_sort = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
+        df_sort['Days_Since_Last'] = df_sort.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
+        recurring = df_sort[df_sort['Days_Since_Last'] <= recurring_days]
+        if not recurring.empty:
+            rec_sum = recurring.groupby(['Serial No.', 'Site Name']).agg(Repeats=('Case Number', 'count'), Avg_Days=('Days_Since_Last', 'mean')).reset_index().sort_values('Repeats', ascending=False)
+            st.dataframe(rec_sum.style.format({'Avg_Days': '{:.1f}'}), use_container_width=True, height=300)
+            
+    with col_t2:
+        st.error("**🚨 Network Friction Events:** Single incidents causing **>24 Hours** of operational downtime.")
+        severe_df = df[df['Actual Down Time Hours'] >= 24.0].sort_values('Actual Down Time Hours', ascending=False)
+        if not severe_df.empty:
+            st.dataframe(severe_df[['Case Number', 'Serial No.', 'Site Name', 'Actual Down Time Hours', 'Failed Component']], use_container_width=True, height=300)
 
-# --- TAB 7: SERIAL NUMBER INVESTIGATIVE MATRIX ---
-with tab7:
-    def get_mode(x):
-        return x.mode()[0] if not x.empty else "Unknown"
-
-    serial_df = df.groupby(['Serial No.', 'Site Name', 'Family/Line: Name']).agg(
-        Total_Complaints=('Case Number', 'count'),
-        Total_Down_Hours=('Actual Down Time Hours', 'sum'),
-        Primary_Technician=('Primary Technician', get_mode)
-    ).reset_index()
-
-    serial_df['Uptime %'] = ((total_timeline_hours - serial_df['Total_Down_Hours']) / total_timeline_hours) * 100
-    serial_df['Uptime %'] = serial_df['Uptime %'].round(2)
-    serial_df['Total_Down_Hours'] = serial_df['Total_Down_Hours'].round(1)
+    st.markdown("---")
+    st.subheader("🔍 Complete Serial Number Uptime Matrix")
     
-    serial_df = serial_df.sort_values(by='Total_Complaints', ascending=False)
-    serial_df = serial_df[['Serial No.', 'Site Name', 'Family/Line: Name', 'Total_Complaints', 'Uptime %', 'Total_Down_Hours', 'Primary_Technician']]
+    serial_df = df.groupby(['Serial No.', 'Site Name', 'Family/Line: Name']).agg(Total_Cases=('Case Number', 'count'), Down_Hours=('Actual Down Time Hours', 'sum')).reset_index()
+    serial_df['Uptime %'] = ((total_timeline_hours - serial_df['Down_Hours']) / total_timeline_hours) * 100
+    serial_df = serial_df.sort_values('Total_Cases', ascending=False)
 
-    def highlight_low_uptime(row):
-        color = 'background-color: rgba(225, 87, 89, 0.2)' if row['Uptime %'] < 95.0 else ''
-        return [color] * len(row)
+    def highlight_low(row):
+        return ['background-color: rgba(225, 87, 89, 0.15)' if row['Uptime %'] < 95.0 else ''] * len(row)
 
-    styled_df = serial_df.style.apply(highlight_low_uptime, axis=1).format({'Uptime %': "{:.2f}%"})
-    st.dataframe(styled_df, use_container_width=True, height=600)
-
-# --- TAB 8: SEVERE OUTLIERS (>24 Hours) ---
-with tab8:
-    st.info("**🚨 The Network Friction List:** Below are isolated incidents that resulted in excessive operational downtime (>24 Hours). These specific tickets warrant deep-dive Root Cause Analysis (RCA).")
-    
-    severe_df = df[df['Actual Down Time Hours'] >= 24.0]
-    
-    if not severe_df.empty:
-        severe_disp = severe_df[['Case Number', 'Site Name', 'Serial No.', 'Family/Line: Name', 'Hardware Sub-Domain', 'Actual Down Time', 'Actual Down Time Hours', 'Subject']].copy()
-        severe_disp = severe_disp.sort_values(by='Actual Down Time Hours', ascending=False)
-        
-        severe_disp['Actual Down Time Hours'] = severe_disp['Actual Down Time Hours'].round(1)
-        st.dataframe(severe_disp, use_container_width=True, height=600)
-    else:
-        st.success("Excellent! No individual breakdowns exceeded 24 hours of continuous downtime based on current filters.")
+    st.dataframe(serial_df.style.apply(highlight_low, axis=1).format({'Uptime %': "{:.2f}%", 'Down_Hours': "{:.1f}"}), use_container_width=True, height=500)
