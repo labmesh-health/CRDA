@@ -480,7 +480,7 @@ else:
                     <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
                     """, unsafe_allow_html=True)
 
-            # Core Visual Layout Matrix with map-based bubble chart
+            # Core Visual Layout Matrix with PAN-LOCKED map-based bubble chart
             col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
@@ -488,7 +488,6 @@ else:
                     city_counts = df['City'].value_counts().reset_index()
                     city_counts.columns = ['City', 'Breakdowns']
                     
-                    # FIX: Pass the unique cities as a tuple so Streamlit can cache it securely!
                     unique_cities_tuple = tuple(city_counts['City'].dropna().unique())
                     city_coords = geocode_cities(unique_cities_tuple)
                     
@@ -505,11 +504,13 @@ else:
                             hover_name='City',
                             hover_data=['Breakdowns'],
                             color_discrete_sequence=[CORP_BLUE],
-                            zoom=3,
+                            zoom=3.8,  # ZOOM INCREASED
+                            center={"lat": 22.5, "lon": 79.5}, # CENTERED ON INDIA
                             title="Citywide Breakdown Density Mapping"
                         )
                         fig_map.update_layout(
                             mapbox_style="open-street-map",
+                            mapbox_bounds={"west": 68, "east": 98, "south": 6, "north": 36}, # LOCKED BOUNDARIES FOR INDIA
                             margin=dict(l=5, r=5, t=40, b=5)
                         )
                         st.plotly_chart(fig_map, use_container_width=True, theme="streamlit")
