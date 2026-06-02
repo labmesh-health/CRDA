@@ -2,3 +2,5 @@ streamlit>=1.20.0
 pandas>=1.5.0
 numpy>=1.21.0
 plotly>=5.10.0
+openpyxl>=3.0.10   # Required for reading .xlsx files
+pdfplumber>=0.9.0  # Required for extracting tables from .pdf files
