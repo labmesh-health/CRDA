@@ -12,6 +12,14 @@ import io
 st.set_page_config(page_title="Customer Rexis Dashboard", layout="wide", initial_sidebar_state="expanded")
 st.title("🔬 Customer Rexis Service & Reliability Dashboard")
 
+# --- PROFESSIONAL COLOR PALETTE (Contrasts well on Light & Dark) ---
+CORP_BLUE = '#4E79A7'
+CORP_RED = '#E15759'
+CORP_TEAL = '#76B7B2'
+CORP_ORANGE = '#F28E2B'
+CORP_GREEN = '#59A14F'
+SAFE_PALETTE = px.colors.qualitative.Safe
+
 # ==========================================
 # SIDEBAR DATA INGESTION
 # ==========================================
@@ -50,13 +58,12 @@ def load_and_clean_data(file_bytes, file_name):
         
     df.columns = df.columns.str.strip()
     
-    # 2. SITE NAME DIFFERENTIATION (Account + City)
+    # 2. SITE NAME DIFFERENTIATION
     if 'Account Name' in df.columns and 'City' in df.columns:
         df['Site Name'] = df['Account Name'].astype(str) + " (" + df['City'].astype(str) + ")"
     else:
         df['Site Name'] = df.get('Account Name', 'Unknown Site')
 
-    # Standardize 'System Down Yes/No' Column
     if 'System Down Yes/No' in df.columns:
         df['System Down Yes/No'] = df['System Down Yes/No'].fillna('Not Down').apply(
             lambda x: 'Down' if 'down' in str(x).lower() and 'not' not in str(x).lower() or 'yes' in str(x).lower() else 'Not Down'
@@ -94,7 +101,6 @@ def load_and_clean_data(file_bytes, file_name):
             else: return f"{int(days)} Days Later"
         df['Resolution_Speed'] = df['Days_to_Resolve'].apply(resolve_category)
 
-    # 6. DOWNTIME CALCULATION
     if 'Actual Down Time' in df.columns:
         df['Actual Down Time Hours'] = pd.to_timedelta(df['Actual Down Time'].astype(str), errors='coerce').dt.total_seconds() / 3600
         df['Actual Down Time Hours'] = df['Actual Down Time Hours'].fillna(0)
@@ -109,14 +115,13 @@ with st.spinner("Extracting and processing data..."):
     file_bytes = uploaded_file.getvalue()
     df_raw = load_and_clean_data(file_bytes, uploaded_file.name)
 
-# Base timelines
 min_date = df_raw['Date/Time Opened'].min()
 max_date = df_raw['Date/Time Opened'].max()
 total_days = (max_date - min_date).days if pd.notnull(max_date) else 143
 total_timeline_hours = max(total_days * 24, 24)
 
 # ==========================================
-# SIDEBAR FILTERS & RECURRING SETTINGS
+# SIDEBAR FILTERS
 # ==========================================
 st.sidebar.header("⚙️ Flexible Data Filters")
 min_d, max_d = min_date.date(), max_date.date()
@@ -153,8 +158,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 
 # --- TAB 1: EXECUTIVE HEALTH ---
 with tab1:
-    st.info("**🤖 AI Insight:** The overall network is being tracked for Uptime SLAs. Geographic heatmaps highlight regions requiring immediate executive attention due to disproportionately high breakdown rates.")
-    
+    st.info("**🤖 AI Insight:** The overall network is being tracked for Uptime SLAs. Geographic heatmaps highlight regions requiring immediate executive attention.")
     total_down_hours = df['Actual Down Time Hours'].sum() if 'Actual Down Time Hours' in df.columns else 0
     unique_machines = df['Serial No.'].nunique()
     avg_down_per_machine = total_down_hours / unique_machines if unique_machines > 0 else 0
@@ -163,68 +167,86 @@ with tab1:
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Cases Opened", len(df))
     col2.metric("Average Uptime %", f"{uptime_pct:.2f}%")
-    
     if 'Resolution_Speed' in df.columns:
         same_day_pct = (len(df[df['Resolution_Speed'] == 'Same Day']) / len(df) * 100) if len(df) > 0 else 0
         col3.metric("SLA (Same-Day) Compliance %", f"{same_day_pct:.1f}%")
 
-    # Geographic Heatmap / Bar
     if 'Region' in df.columns:
         reg_counts = df['Region'].value_counts().reset_index()
         reg_counts.columns = ['Region', 'Complaints']
-        fig_bar = px.bar(reg_counts, x='Region', y='Complaints', title="Geographic Heatmap of Case Volumes", color='Complaints', color_continuous_scale='Viridis')
-        st.plotly_chart(fig_bar, use_container_width=True)
+        # Added text_auto for data labels
+        fig_bar = px.bar(reg_counts, x='Region', y='Complaints', title="Geographic Case Volumes", text_auto=True, color_discrete_sequence=[CORP_BLUE])
+        fig_bar.update_traces(textposition='outside')
+        st.plotly_chart(fig_bar, use_container_width=True, theme="streamlit")
 
 # --- TAB 2: SERVICE & COMPLAINT TRENDS ---
 with tab2:
     col_chart1, col_chart2 = st.columns(2)
-    
     with col_chart1:
-        st.info("**🤖 AI Insight:** Hardware failures are often the primary bottleneck compared to Application/Reagent issues, indicating physical wear-and-tear outpaces calibration errors.")
-        fig_donut = px.pie(df, names='Type of Complaint', hole=0.4, title="Complaint Breakdown (Hardware vs Application)")
-        st.plotly_chart(fig_donut, use_container_width=True)
+        st.info("**🤖 AI Insight:** Hardware failures are often the primary bottleneck compared to Application/Reagent issues.")
+        fig_donut = px.pie(df, names='Type of Complaint', hole=0.4, title="Complaint Breakdown", color_discrete_sequence=[CORP_TEAL, CORP_ORANGE, CORP_BLUE])
+        # Force label and percentage to show
+        fig_donut.update_traces(textinfo='label+percent+value')
+        st.plotly_chart(fig_donut, use_container_width=True, theme="streamlit")
         
     with col_chart2:
-        st.info("**🤖 AI Insight:** Spikes in 'System Down' tickets correlate closely with severe hardware failures. The trendline tracks overall load vs operational halts.")
-        # Daily Trendline
+        st.info("**🤖 AI Insight:** Spikes in 'System Down' tickets correlate closely with severe hardware failures.")
         daily_df = df.groupby('Opened_Date').agg(
             Total_Complaints=('Case Number', 'count'),
             Down_Systems=('System Down Yes/No', lambda x: (x == 'Down').sum())
         ).reset_index()
         
         fig_trend = go.Figure()
-        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Total_Complaints'], mode='lines', name='Total Complaints', line=dict(color='blue')))
-        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Down_Systems'], mode='lines', name='Systems Down', line=dict(color='red')))
+        # Using markers so individual data points are clear
+        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Total_Complaints'], mode='lines+markers', name='Total Complaints', line=dict(color=CORP_BLUE, width=2.5)))
+        fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Down_Systems'], mode='lines+markers', name='Systems Down', line=dict(color=CORP_RED, width=2.5)))
         fig_trend.update_layout(title="Daily Trendline: Total Complaints vs. System Downs", xaxis_title="Date", yaxis_title="Number of Cases")
-        st.plotly_chart(fig_trend, use_container_width=True)
+        st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
 
-# --- TAB 3: INSTRUMENT & PRODUCT LINE RELIABILITY ---
+    if 'Resolution Bucket' in df.columns and 'Response Bucket' in df.columns:
+        bucket_order = ["< 24 Hours", "24 - 48 Hours", "48 - 72 Hours", "72 - 96 Hours", "> 96 Hours"]
+        res_bucket_counts = df['Resolution Bucket'].value_counts().reindex(bucket_order).reset_index()
+        res_bucket_counts.columns = ['Bucket', 'Count']
+        res_bucket_counts['Type'] = 'Resolution Time'
+
+        resp_bucket_counts = df['Response Bucket'].value_counts().reindex(bucket_order).reset_index()
+        resp_bucket_counts.columns = ['Bucket', 'Count']
+        resp_bucket_counts['Type'] = 'Response Time'
+
+        combined_buckets = pd.concat([res_bucket_counts, resp_bucket_counts])
+        # text_auto=True adds the labels automatically
+        fig_buckets = px.bar(combined_buckets, x='Bucket', y='Count', color='Type', barmode='group', title="SLA Buckets", text_auto=True, color_discrete_sequence=[CORP_BLUE, CORP_TEAL])
+        fig_buckets.update_traces(textposition='outside')
+        st.plotly_chart(fig_buckets, use_container_width=True, theme="streamlit")
+
+# --- TAB 3: INSTRUMENT RELIABILITY ---
 with tab3:
     col_chart3, col_chart4 = st.columns(2)
-    
     with col_chart3:
-        st.info("**🤖 AI Insight:** The Pareto chart exposes highly unstable product lines generating the bulk of the support volume.")
+        st.info("**🤖 AI Insight:** The Pareto chart exposes highly unstable product lines.")
         fam_counts = df.groupby('Family/Line: Name').size().reset_index(name='Complaints').sort_values(by='Complaints', ascending=False).head(10)
         fam_counts['Cumulative %'] = fam_counts['Complaints'].cumsum() / fam_counts['Complaints'].sum() * 100
         
         fig_fam_pareto = go.Figure()
-        fig_fam_pareto.add_trace(go.Bar(x=fam_counts['Family/Line: Name'], y=fam_counts['Complaints'], name="Complaints", marker_color='orange'))
-        fig_fam_pareto.add_trace(go.Scatter(x=fam_counts['Family/Line: Name'], y=fam_counts['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers', line=dict(color='black')))
-        fig_fam_pareto.update_layout(title="Top Problematic Product Families", yaxis2=dict(overlaying='y', side='right', range=[0, 105]), xaxis_tickangle=-45)
-        st.plotly_chart(fig_fam_pareto, use_container_width=True)
+        # Added explicit text labels to Pareto bars and lines
+        fig_fam_pareto.add_trace(go.Bar(x=fam_counts['Family/Line: Name'], y=fam_counts['Complaints'], name="Complaints", marker_color=CORP_BLUE, text=fam_counts['Complaints'], textposition='auto'))
+        fig_fam_pareto.add_trace(go.Scatter(x=fam_counts['Family/Line: Name'], y=fam_counts['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers+text', text=fam_counts['Cumulative %'].round(1).astype(str)+'%', textposition='top center', line=dict(color=CORP_RED, width=2.5)))
+        fig_fam_pareto.update_layout(title="Top Problematic Product Families", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), xaxis_tickangle=-45)
+        st.plotly_chart(fig_fam_pareto, use_container_width=True, theme="streamlit")
         
     with col_chart4:
-        st.info("**🤖 AI Insight:** AI anomaly detection highlights which specific product lines have the highest likelihood of resulting in a total 'System Down' state.")
+        st.info("**🤖 AI Insight:** Highlights which product lines have the highest likelihood of resulting in a total 'System Down' state.")
         down_ratio = df.groupby(['Family/Line: Name', 'System Down Yes/No']).size().reset_index(name='Count')
         top_fams = fam_counts['Family/Line: Name'].tolist()
         down_ratio = down_ratio[down_ratio['Family/Line: Name'].isin(top_fams)]
         
-        fig_down = px.bar(down_ratio, x='Family/Line: Name', y='Count', color='System Down Yes/No', barmode='stack', title="System Down Ratio by Product Line", color_discrete_map={'Down':'red', 'Not Down':'green'})
-        st.plotly_chart(fig_down, use_container_width=True)
+        # Added text_auto for stacked bars
+        fig_down = px.bar(down_ratio, x='Family/Line: Name', y='Count', color='System Down Yes/No', barmode='stack', text_auto=True, title="System Down Ratio by Product Line", color_discrete_map={'Down': CORP_RED, 'Not Down': CORP_TEAL})
+        st.plotly_chart(fig_down, use_container_width=True, theme="streamlit")
 
 # --- TAB 4: TOP SITES (80/20 PARETO) ---
 with tab4:
-    st.info("**🤖 AI Insight:** Account Names merged with Cities to accurately execute the 80/20 rule for Hardware interventions.")
+    st.info("**🤖 AI Insight:** Execute the 80/20 rule for Hardware interventions.")
     hw_df = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
     if not hw_df.empty:
         account_df = hw_df.groupby('Site Name').size().reset_index(name='Hardware Complaints')
@@ -232,21 +254,23 @@ with tab4:
         account_df['Cumulative %'] = account_df['Hardware Complaints'].cumsum() / account_df['Hardware Complaints'].sum() * 100
         
         fig_pareto = go.Figure()
-        fig_pareto.add_trace(go.Bar(x=account_df['Site Name'], y=account_df['Hardware Complaints'], name="Hardware Complaints", marker_color='indianred'))
-        fig_pareto.add_trace(go.Scatter(x=account_df['Site Name'], y=account_df['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers', line=dict(color='blue', width=2)))
-        fig_pareto.update_layout(title="Top 20 Sites by Hardware Issues", yaxis2=dict(overlaying='y', side='right', range=[0, 105]), xaxis_tickangle=-45)
-        st.plotly_chart(fig_pareto, use_container_width=True)
+        # Added text labels
+        fig_pareto.add_trace(go.Bar(x=account_df['Site Name'], y=account_df['Hardware Complaints'], name="Hardware Complaints", marker_color=CORP_BLUE, text=account_df['Hardware Complaints'], textposition='auto'))
+        fig_pareto.add_trace(go.Scatter(x=account_df['Site Name'], y=account_df['Cumulative %'], name="Cumulative %", yaxis='y2', mode='lines+markers+text', text=account_df['Cumulative %'].round(1).astype(str)+'%', textposition='top center', line=dict(color=CORP_RED, width=2.5)))
+        fig_pareto.update_layout(title="Top 20 Sites by Hardware Issues", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), xaxis_tickangle=-45)
+        st.plotly_chart(fig_pareto, use_container_width=True, theme="streamlit")
 
 # --- TAB 5: CITYWISE BREAKDOWN ---
 with tab5:
-    st.info("**🤖 AI Insight:** Identifies which cities carry the heaviest instrument failure load across all product lines.")
+    st.info("**🤖 AI Insight:** Identifies which cities carry the heaviest instrument failure load.")
     if 'City' in df.columns and 'Family/Line: Name' in df.columns:
         city_inst = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total Breakdowns')
         city_inst = city_inst.sort_values(by='Total Breakdowns', ascending=False).head(50)
-        fig_city = px.bar(city_inst, x='City', y='Total Breakdowns', color='Family/Line: Name', title="Citywise Instrument Breakdowns", barmode='stack')
-        st.plotly_chart(fig_city, use_container_width=True)
+        # Added text_auto
+        fig_city = px.bar(city_inst, x='City', y='Total Breakdowns', color='Family/Line: Name', title="Citywise Instrument Breakdowns", text_auto=True, barmode='stack', color_discrete_sequence=SAFE_PALETTE)
+        st.plotly_chart(fig_city, use_container_width=True, theme="streamlit")
 
-# --- TAB 6: RECURRING BREAKDOWNS ---
+# --- TAB 6 & 7: TABLES ---
 with tab6:
     st.info(f"**🤖 AI Insight:** The 'Lemon' machine tracker. Flagging instruments requiring service again within **{recurring_days} days**.")
     df_sorted = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
@@ -261,11 +285,8 @@ with tab6:
         recurring_summary['Avg_Days_Between_Failures'] = recurring_summary['Avg_Days_Between_Failures'].round(1)
         st.dataframe(recurring_summary, use_container_width=True)
 
-# --- TAB 7: SERIAL NUMBER INVESTIGATIVE DEEP DIVE ---
 with tab7:
-    st.info("**🤖 AI Insight:** Granular tracking for repetitive instrument failures. Rows highlighted in Red indicate the instrument has fallen below the 95% Uptime threshold.")
-    
-    # Calculate metrics grouped by Serial Number
+    st.info("**🤖 AI Insight:** Granular tracking. Rows highlighted in Red indicate the instrument has fallen below the 95% Uptime threshold.")
     def get_mode(x):
         return x.mode()[0] if not x.empty else "Unknown"
 
@@ -275,18 +296,15 @@ with tab7:
         Primary_Technician=('Primary Technician', get_mode)
     ).reset_index()
 
-    # Calculate individual Serial Number Uptime %
     serial_df['Uptime %'] = ((total_timeline_hours - serial_df['Total_Down_Hours']) / total_timeline_hours) * 100
     serial_df['Uptime %'] = serial_df['Uptime %'].round(2)
     serial_df['Total_Down_Hours'] = serial_df['Total_Down_Hours'].round(1)
     
-    # Sort and reorder columns
     serial_df = serial_df.sort_values(by='Total_Complaints', ascending=False)
     serial_df = serial_df[['Serial No.', 'Site Name', 'Family/Line: Name', 'Total_Complaints', 'Uptime %', 'Total_Down_Hours', 'Primary_Technician']]
 
-    # Streamlit conditional formatting (Highlight Uptime < 95%)
     def highlight_low_uptime(row):
-        color = 'background-color: #ffcccc' if row['Uptime %'] < 95.0 else ''
+        color = 'background-color: rgba(225, 87, 89, 0.2)' if row['Uptime %'] < 95.0 else ''
         return [color] * len(row)
 
     styled_df = serial_df.style.apply(highlight_low_uptime, axis=1).format({'Uptime %': "{:.2f}%"})
