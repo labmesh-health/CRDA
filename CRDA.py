@@ -66,7 +66,7 @@ def load_and_clean_data(file_bytes, file_name):
     file_object = io.BytesIO(file_bytes)
     file_ext = file_name.split('.')[-1].lower()
     
-    # 1. READ THE FILE
+    # 1. READ THE FILE BASED ON EXTENSION
     try:
         if file_ext == 'csv':
             file_object.seek(0)
@@ -198,16 +198,16 @@ def load_and_clean_data(file_bytes, file_name):
 
     return df
 
-# Halt execution gracefully if no file is present
+# STOP EXECUTION UNTIL A FILE IS PROVDIED
 if uploaded_file is None:
-    st.info("👋 Welcome! Please upload your service log (CSV, Excel, or PDF) in the sidebar.")
+    st.info("👋 Welcome! Please upload your service log (CSV, Excel, or PDF) in the sidebar to load the analytical views.")
     st.stop()
 
-# Execution continues safely only when file exists
+# Execution continues safely only when file bytes exist in memory
 with st.spinner("Extracting and processing data..."):
     df_raw = load_and_clean_data(uploaded_file.getvalue(), uploaded_file.name)
 
-# --- TIMELINE SETUP (Safe from NameErrors) ---
+# --- TIMELINE SETUP ---
 min_date = df_raw['Date/Time Opened'].min()
 max_date = df_raw['Date/Time Opened'].max()
 total_timeline_hours = max(((max_date - min_date).days if pd.notnull(max_date) else 143) * 24, 24)
