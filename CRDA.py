@@ -363,9 +363,53 @@ with tab4:
     col_t1, col_t2 = st.columns(2)
     
     with col_t1:
-        st.warning(f"**🍋 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
+        st.warning(f"**🤖 Lemon Tracker:** Serial Numbers breaking down repeatedly within **{recurring_days} Days**.")
         if 'Serial No.' in df.columns and 'Date/Time Opened' in df.columns:
             df_sort = df.sort_values(by=['Serial No.', 'Date/Time Opened'])
             df_sort['Days_Since_Last'] = df_sort.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
             recurring = df_sort[df_sort['Days_Since_Last'] <= recurring_days]
-            if
+            if not recurring.empty:
+                rec_sum = recurring.groupby(['Serial No.', 'Site Name']).agg(Repeats=('Case Number', 'count'), Avg_Days=('Days_Since_Last', 'mean')).reset_index().sort_values('Repeats', ascending=False)
+                st.dataframe(rec_sum.style.format({'Avg_Days': '{:.1f}'}), use_container_width=True, height=300)
+            
+    with col_t2:
+        st.error("**🚨 Network Friction Events:** Single incidents causing **>24 Hours** of operational downtime.")
+        if 'Actual Down Time Hours' in df.columns:
+            # FIX applied here: fillna(0) to ensure boolean masking works without NaN errors
+            severe_mask = df['Actual Down Time Hours'].fillna(0) >= 24.0
+            severe_df = df[severe_mask].sort_values('Actual Down Time Hours', ascending=False)
+            
+            if not severe_df.empty:
+                st.dataframe(severe_df[['Case Number', 'Serial No.', 'Site Name', 'Actual Down Time Hours', 'Failed Component']], use_container_width=True, height=300)
+
+    st.markdown("---")
+    st.subheader("🔍 Complete Serial Number Uptime Matrix")
+    
+    # 1. Bulletproof Groupby (prevents dropping NaNs and handles empty filtered data gracefully)
+    if all(col in df.columns for col in ['Serial No.', 'Site Name', 'Family/Line: Name', 'Case Number', 'Actual Down Time Hours']):
+        serial_df = df.groupby(['Serial No.', 'Site Name', 'Family/Line: Name'], dropna=False).agg({
+            'Case Number': 'count', 
+            'Actual Down Time Hours': 'sum'
+        }).reset_index()
+        
+        # 2. Safely rename the columns
+        serial_df.rename(columns={
+            'Case Number': 'Total_Cases', 
+            'Actual Down Time Hours': 'Down_Hours'
+        }, inplace=True)
+
+        # 3. Safety Check: Only sort and style if there is actual data to display
+        if not serial_df.empty:
+            serial_df['Uptime %'] = ((total_timeline_hours - serial_df['Down_Hours']) / total_timeline_hours) * 100
+            serial_df = serial_df.sort_values('Total_Cases', ascending=False)
+
+            def highlight_low(row):
+                # Added pd.notnull check to prevent errors on completely blank rows
+                color = 'background-color: rgba(225, 87, 89, 0.15)' if pd.notnull(row['Uptime %']) and row['Uptime %'] < 95.0 else ''
+                return [color] * len(row)
+
+            st.dataframe(serial_df.style.apply(highlight_low, axis=1).format({'Uptime %': "{:.2f}%", 'Down_Hours': "{:.1f}"}), use_container_width=True, height=500)
+        else:
+            st.warning("No serial number data available for the currently selected filters.")
+    else:
+        st.warning("Missing required columns to generate Serial Matrix.")
