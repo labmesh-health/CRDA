@@ -75,7 +75,7 @@ CORP_ORANGE = '#F28E2B'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
-# 2. DYNAMIC GEOCODING DIRECTORY (INDIA BOUNDED)
+# 2. DYNAMIC GEOCODING DIRECTORY
 # ==========================================
 @st.cache_data(show_spinner=False)
 def geocode_cities(city_list):
@@ -170,7 +170,7 @@ def geocode_cities(city_list):
     return coordinates
 
 # ==========================================
-# 3. DATA INGESTION & PROCESSING BOUNDARY
+# 3. SIDEBAR INGESTION VALIDATION BOUNDARY
 # ==========================================
 st.sidebar.header("📁 Data Ingestion")
 uploaded_file = st.sidebar.file_uploader("Upload Network Service Log", type=["csv", "xlsx", "xls", "pdf"])
@@ -180,7 +180,6 @@ def load_and_clean_data(file_bytes, file_name):
     file_object = io.BytesIO(file_bytes)
     file_ext = file_name.split('.')[-1].lower()
     
-    # Structural File Parsing
     try:
         if file_ext == 'csv':
             file_object.seek(0)
@@ -207,13 +206,11 @@ def load_and_clean_data(file_bytes, file_name):
         
     df.columns = df.columns.str.strip()
     
-    # Location Hierarchy Consolidation
     if 'Account Name' in df.columns and 'City' in df.columns:
         df['Site Name'] = df['Account Name'].astype(str) + " (" + df['City'].astype(str) + ")"
     else:
         df['Site Name'] = df.get('Account Name', 'Unknown Site')
 
-    # Operational State Standardization
     if 'System Down Yes/No' in df.columns:
         df['System Down Yes/No'] = df['System Down Yes/No'].fillna('Not Down').apply(
             lambda x: 'Down' if 'yes' in str(x).lower() or 'down' in str(x).lower() else 'Not Down'
@@ -224,7 +221,6 @@ def load_and_clean_data(file_bytes, file_name):
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
-        # Mapping Technical Sub-Domains
         def categorize_hardware(text):
             if any(w in text for w in ['gripper', 'axis', 'movement', 'rack', 'motor', 'actuator', 'l2 line', 'feeder', 'cup pick up', '18-05-01']): 
                 return 'Kinematic / Robotic'
@@ -239,7 +235,6 @@ def load_and_clean_data(file_bytes, file_name):
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
         
-        # Pure Logical Keyword Rule Bucket for APPLICATION-specific issues
         def logical_application_bucket(text):
             if any(w in text for w in ['qc', 'outlier', 'eqa', 'iqc', 'control variation', 'variation']): 
                 return 'Quality Control (QC) Issue'
@@ -254,7 +249,6 @@ def load_and_clean_data(file_bytes, file_name):
             return 'Other Application Issue'
         df['Logical Application Issue'] = df['Subject_Clean'].apply(logical_application_bucket)
 
-        # Pure Logical Keyword Rule Bucket for HARDWARE-specific issues
         def logical_hardware_bucket(text):
             if any(w in text for w in ['gripper', 'cup pick', 'pickup', '18-05-01', '300-000028', 'waste mechanism', 'magazine']): 
                 return 'Gripper & Cup Pickup Fault'
@@ -276,7 +270,6 @@ def load_and_clean_data(file_bytes, file_name):
         df['Logical Application Issue'] = 'Unknown'
         df['Logical Hardware Issue'] = 'Unknown'
 
-    # Service Timeline Engineering
     for col in ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce', format='mixed')
@@ -310,7 +303,6 @@ def load_and_clean_data(file_bytes, file_name):
 
     return df
 
-
 # ==========================================
 # 4. CONDITIONAL APPLICATION EXECUTION
 # ==========================================
@@ -323,7 +315,6 @@ else:
     if df_raw.empty:
         st.error("Incompatible dataset structure. Please check internal database keys.")
     else:
-        # Secure Baseline Time Parameters
         min_date = df_raw['Date/Time Opened'].min()
         max_date = df_raw['Date/Time Opened'].max()
         
@@ -333,7 +324,6 @@ else:
         else:
             total_timeline_hours = 3432
 
-        # Sidebar Input Layout
         st.sidebar.header("⚙️ Command Controls")
         min_d = min_date.date() if pd.notnull(min_date) else pd.to_datetime('2026-01-01').date()
         max_d = max_date.date() if pd.notnull(max_date) else pd.to_datetime('2026-12-31').date()
@@ -358,7 +348,6 @@ else:
 
         df = df_filtered
 
-        # Structural Layout Tab Definitions
         tab1, tab2, tab3, tab4 = st.tabs([
             "📊 1. Strategic Command Center", 
             "🏭 2. Fleet & Site Reliability Matrix", 
@@ -385,7 +374,6 @@ else:
                 
             avg_downtime_per_case = df['Actual Down Time Hours'].mean() if total_cases > 0 else 0
 
-            # Render HTML Metric Pillows
             st.markdown(f"""
             <div class='kpi-container'>
                 <div class='kpi-card'>
@@ -407,7 +395,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- TARGETED AND EXPANDED DIRECT ROW/CASE ID CALCULATIONS ---
             if not df.empty:
                 max_down_idx = df['Actual Down Time Hours'].idxmax()
                 critical_case_number = df.loc[max_down_idx, 'Case Number'] if 'Case Number' in df.columns else "N/A"
@@ -458,7 +445,6 @@ else:
                 ds_check['Days_Diff'] = ds_check.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
                 lemon_assets_count = len(ds_check[ds_check['Days_Diff'] <= recurring_days]['Serial No.'].unique())
 
-            # --- STRATEGIC COMMAND CENTER INSIGHTS PANEL ---
             st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
             
             exp_brief = st.expander("👁️ Review High-Impact Operational Diagnostics & Case Audits", expanded=True)
@@ -477,7 +463,6 @@ else:
                     <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
                     """, unsafe_allow_html=True)
 
-            # Core Visual Layout Matrix with map-based bubble chart
             col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
@@ -502,12 +487,12 @@ else:
                             hover_data=['Breakdowns'],
                             color_discrete_sequence=[CORP_BLUE],
                             zoom=3.8,
-                            center={"lat": 22.5, "lon": 79.5}, # CENTERED ON INDIA
+                            center={"lat": 22.5, "lon": 79.5}, 
                             title="Citywide Breakdown Density Mapping"
                         )
                         fig_map.update_layout(
                             mapbox_style="open-street-map",
-                            mapbox_bounds={"west": 68, "east": 98, "south": 6, "north": 36}, # LOCKED TO INDIA
+                            mapbox_bounds={"west": 68, "east": 98, "south": 6, "north": 36},
                             margin=dict(l=5, r=5, t=40, b=5)
                         )
                         st.plotly_chart(fig_map, use_container_width=True, theme="streamlit")
@@ -540,7 +525,6 @@ else:
                     fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
 
-            # --- SYSTEMIC CORRECTIVE ACTION (CAPA) PLAYBOOK ---
             st.markdown("<div class='insight-header'>📋 Actionable Implementation Playbook (Prescriptive CAPA Engine)</div>", unsafe_allow_html=True)
             col_capa1, col_capa2, col_capa3 = st.columns(3)
             
@@ -608,60 +592,64 @@ else:
         with tab3:
             st.info("**🤖 Logical Keyword Mapping Matrix:** Subjects broken down systematically using rigorous technical rule sets, mapping top application metrics alongside mechanical hardware failure counts.")
             
-            # --- NEW: ORIGIN VS. OPERATIONAL IMPACT BUBBLE CHART ---
-            st.markdown("<div class='insight-header'>🫧 Complaint Origin vs. Operational Impact Matrix</div>", unsafe_allow_html=True)
+            # --- NEW: INDIVIDUAL INCIDENT IMPACT BUBBLE CHART ---
+            st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (All Calls Plotted)</div>", unsafe_allow_html=True)
             
-            if 'Type of Complaint' in df.columns and 'Actual Down Time Hours' in df.columns and not df.empty:
-                bubble_df = df.groupby('Type of Complaint').agg(
-                    Frequency=('Case Number', 'count'),
-                    Avg_Downtime=('Actual Down Time Hours', 'mean'),
-                    System_Down_Pct=('System Down Yes/No', lambda x: ((x == 'Down').sum() / len(x)) * 100)
-                ).reset_index()
+            if 'Actual Down Time Hours' in df.columns and 'Resolution_Hours' in df.columns and not df.empty:
+                plot_df = df.copy()
+                
+                # To prevent Plotly scaling errors with 0 or NaN resolution times, we set a minimum bubble size of 1
+                plot_df['Bubble_Size'] = plot_df['Resolution_Hours'].fillna(1).clip(lower=1)
+                
+                fig_bubble = px.scatter(
+                    plot_df,
+                    x="Date/Time Opened",       # Spread calls out chronologically on the X-axis
+                    y="Actual Down Time Hours", # High on Y-axis = massive system downtime
+                    size="Bubble_Size",         # Larger bubble = took a long time to resolve
+                    color="Type of Complaint",
+                    hover_name="Case Number",
+                    hover_data={
+                        "Site Name": True,
+                        "Failed Component": True,
+                        "Resolution_Hours": ':.1f',
+                        "Actual Down Time Hours": ':.1f',
+                        "Bubble_Size": False,
+                        "Date/Time Opened": "|%b %d, %Y"
+                    },
+                    size_max=45, 
+                    opacity=0.6, 
+                    color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
+                )
 
-                bubble_df = bubble_df[bubble_df['Frequency'] > 0]
+                fig_bubble.update_traces(
+                    marker=dict(line=dict(width=1, color='White'))
+                )
+                
+                fig_bubble.update_layout(
+                    title="Timeline of Every Service Call: Downtime vs. Resolution Speed",
+                    xaxis_title="Incident Timeline (Date Opened)",
+                    yaxis_title="Actual Down Time (Hours)",
+                    showlegend=True,
+                    legend_title_text="Complaint Origin",
+                    plot_bgcolor='rgba(248, 249, 250, 1)',
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)'),
+                    yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)')
+                )
 
-                if not bubble_df.empty:
-                    fig_bubble = px.scatter(
-                        bubble_df,
-                        x="Frequency",
-                        y="Avg_Downtime",
-                        size="System_Down_Pct",
-                        color="Type of Complaint",
-                        hover_name="Type of Complaint",
-                        text="Type of Complaint",
-                        size_max=65,
-                        color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
-                    )
+                fig_bubble.add_annotation(
+                    text="<b>Insight:</b> Every individual call is plotted. <b>Higher placement</b> = Severe Downtime. <b>Larger Bubble</b> = Longer Resolution Time.",
+                    xref="paper", yref="paper", x=0.5, y=-0.25, showarrow=False,
+                    font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
+                    bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
+                )
 
-                    fig_bubble.update_traces(
-                        textposition='top center',
-                        textfont=dict(size=12, color='#333333'),
-                        marker=dict(line=dict(width=1, color='White'))
-                    )
-                    
-                    fig_bubble.update_layout(
-                        xaxis_title="Frequency of Logs (Low to High)",
-                        yaxis_title="Average Actual Downtime Hours (Low to High)",
-                        showlegend=True,
-                        legend_title_text="Complaint Origin",
-                        plot_bgcolor='rgba(248, 249, 250, 1)',
-                        margin=dict(l=20, r=20, t=40, b=20),
-                        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)', zerolinewidth=2),
-                        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)', zerolinewidth=2)
-                    )
+                st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
+            else:
+                st.warning("Insufficient data keys to generate the Incident Scatter matrix.")
 
-                    fig_bubble.add_annotation(
-                        text="<b>Insight:</b> Application tickets generate high noise, but Hardware Breakdowns carry the highest downtime threat.",
-                        xref="paper", yref="paper", x=0.5, y=-0.25, showarrow=False,
-                        font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
-                        bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
-                    )
-
-                    st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
-            
             st.markdown("---")
             
-            # --- TOP 10 LOGICAL PARSING CHARTS ---
             col_app_chart, col_hw_chart = st.columns(2)
             
             with col_app_chart:
