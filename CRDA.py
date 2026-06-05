@@ -691,6 +691,8 @@ else:
                     hover_data=h_data,
                     size_max=45, 
                     opacity=0.7, 
+                    marginal_y="histogram", 
+                    marginal_x="histogram", 
                     color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
                 )
 
@@ -716,14 +718,14 @@ else:
                     legend_title_text="Complaint Origin",
                     plot_bgcolor='rgba(248, 249, 250, 1)',
                     height=600,
-                    margin=dict(l=20, r=20, t=40, b=120),
+                    margin=dict(l=20, r=20, t=40, b=180),
                     xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)'),
                     yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)')
                 )
 
                 fig_bubble.add_annotation(
-                    text="<b>Insight:</b> Timeline of incidents split by Impact Zones. <b>Higher placement</b> = Severe Downtime. <b>Larger Bubble</b> = Longer Resolution Time.",
-                    xref="paper", yref="paper", x=0.5, y=-0.18, showarrow=False,
+                    text="<b>Insight:</b> Top/Right bar charts display the <b>Volume of incidents</b>. Scatter maps the <b>Downtime Impact vs Timeline</b>.",
+                    xref="paper", yref="paper", x=0.5, y=-0.32, showarrow=False,
                     font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
                     bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
                 )
@@ -792,6 +794,20 @@ else:
                     if not rec_df.empty:
                         rec_summary = rec_df.groupby(['Serial No.', 'Site Name']).agg(Repeats=('Case Number', 'count')).reset_index().sort_values('Repeats', ascending=False)
                         st.dataframe(rec_summary, use_container_width=True)
+                        
+                        top_lemon_sn = rec_summary.iloc[0]['Serial No.']
+                        top_lemon_site = rec_summary.iloc[0]['Site Name']
+                        top_lemon_repeats = rec_summary.iloc[0]['Repeats']
+                        total_lemons = len(rec_summary)
+                        
+                        st.markdown(f"""
+                        <div style='background-color: rgba(242, 142, 43, 0.1); border-left: 4px solid {CORP_ORANGE}; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9rem;'>
+                            <strong>Quick Insights:</strong><br>
+                            • <strong>{total_lemons}</strong> unique assets exhibit chronic instability.<br>
+                            • Asset <strong>{top_lemon_sn}</strong> at <em>{top_lemon_site}</em> leads with <strong>{top_lemon_repeats}</strong> repeated breakdowns.<br>
+                            • <em>Action:</em> Divert from standard break/fix to mandatory root-cause overhaul for these units.
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         st.success("No chronic recurring anomalies detected inside current filter bounds.")
 
@@ -803,6 +819,20 @@ else:
                     
                     if not severe_df.empty:
                         st.dataframe(severe_df[['Case Number', 'Serial No.', 'Site Name', 'Actual Down Time Hours']], use_container_width=True)
+                        
+                        top_severe_case = severe_df.iloc[0]['Case Number']
+                        top_severe_hours = severe_df.iloc[0]['Actual Down Time Hours']
+                        top_severe_site = severe_df.iloc[0]['Site Name']
+                        total_severe = len(severe_df)
+
+                        st.markdown(f"""
+                        <div style='background-color: rgba(225, 87, 89, 0.1); border-left: 4px solid {CORP_RED}; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9rem;'>
+                            <strong>Quick Insights:</strong><br>
+                            • <strong>{total_severe}</strong> incidents breached the critical 24-hour SLA boundary.<br>
+                            • Peak disruption reached <strong>{top_severe_hours:.1f} hrs</strong> for Case <strong>{top_severe_case}</strong> at <em>{top_severe_site}</em>.<br>
+                            • <em>Action:</em> Cross-reference these Case IDs against logistics logs to identify part shipping delays.
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         st.success("Zero long-duration outlier stops logged.")
 
