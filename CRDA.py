@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inject Custom SaaS-style CSS supporting dynamic light/dark theme inheritance
+# Inject Custom SaaS-style CSS for KPIs and Infographics
 st.markdown("""
 <style>
     .kpi-container {
@@ -55,12 +55,48 @@ st.markdown("""
         font-size: 1.3rem;
         font-weight: 700;
         margin-top: 15px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
         color: #4E79A7;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 5px;
     }
-    .bullet-point {
-        margin-bottom: 12px;
-        line-height: 1.6;
+    /* Infographic Cards CSS */
+    .info-card {
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border-left: 6px solid;
+        height: 100%;
+    }
+    .info-card.success {
+        border-left-color: #59A14F;
+        background-color: rgba(89, 161, 79, 0.08);
+    }
+    .info-card.warning {
+        border-left-color: #E15759;
+        background-color: rgba(225, 87, 89, 0.08);
+    }
+    .info-title {
+        font-weight: 700;
+        font-size: 1.05rem;
+        margin-bottom: 8px;
+        color: var(--text-color);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .info-metric {
+        font-size: 1.8rem;
+        font-weight: 900;
+        margin-bottom: 5px;
+    }
+    .success .info-metric { color: #59A14F; }
+    .warning .info-metric { color: #E15759; }
+    
+    .info-desc {
+        font-size: 0.95rem;
+        line-height: 1.4;
+        opacity: 0.85;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,6 +108,7 @@ CORP_BLUE = '#4E79A7'
 CORP_RED = '#E15759'
 CORP_TEAL = '#76B7B2'
 CORP_ORANGE = '#F28E2B'
+CORP_GREEN = '#59A14F'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
@@ -180,6 +217,7 @@ def load_and_clean_data(file_bytes, file_name):
     file_object = io.BytesIO(file_bytes)
     file_ext = file_name.split('.')[-1].lower()
     
+    # Structural File Parsing
     try:
         if file_ext == 'csv':
             file_object.seek(0)
@@ -206,11 +244,13 @@ def load_and_clean_data(file_bytes, file_name):
         
     df.columns = df.columns.str.strip()
     
+    # Location Hierarchy Consolidation
     if 'Account Name' in df.columns and 'City' in df.columns:
         df['Site Name'] = df['Account Name'].astype(str) + " (" + df['City'].astype(str) + ")"
     else:
         df['Site Name'] = df.get('Account Name', 'Unknown Site')
 
+    # Operational State Standardization
     if 'System Down Yes/No' in df.columns:
         df['System Down Yes/No'] = df['System Down Yes/No'].fillna('Not Down').apply(
             lambda x: 'Down' if 'yes' in str(x).lower() or 'down' in str(x).lower() else 'Not Down'
@@ -221,6 +261,7 @@ def load_and_clean_data(file_bytes, file_name):
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
+        # Mapping Technical Sub-Domains
         def categorize_hardware(text):
             if any(w in text for w in ['gripper', 'axis', 'movement', 'rack', 'motor', 'actuator', 'l2 line', 'feeder', 'cup pick up', '18-05-01']): 
                 return 'Kinematic / Robotic'
@@ -235,6 +276,7 @@ def load_and_clean_data(file_bytes, file_name):
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
         
+        # Pure Logical Keyword Rule Bucket for APPLICATION-specific issues
         def logical_application_bucket(text):
             if any(w in text for w in ['qc', 'outlier', 'eqa', 'iqc', 'control variation', 'variation']): 
                 return 'Quality Control (QC) Issue'
@@ -249,6 +291,7 @@ def load_and_clean_data(file_bytes, file_name):
             return 'Other Application Issue'
         df['Logical Application Issue'] = df['Subject_Clean'].apply(logical_application_bucket)
 
+        # Pure Logical Keyword Rule Bucket for HARDWARE-specific issues
         def logical_hardware_bucket(text):
             if any(w in text for w in ['gripper', 'cup pick', 'pickup', '18-05-01', '300-000028', 'waste mechanism', 'magazine']): 
                 return 'Gripper & Cup Pickup Fault'
@@ -270,6 +313,7 @@ def load_and_clean_data(file_bytes, file_name):
         df['Logical Application Issue'] = 'Unknown'
         df['Logical Hardware Issue'] = 'Unknown'
 
+    # Service Timeline Engineering
     for col in ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce', format='mixed')
@@ -293,7 +337,6 @@ def load_and_clean_data(file_bytes, file_name):
         df['Actual Down Time Hours'] = 0
 
     return df
-
 
 # ==========================================
 # 4. CONDITIONAL APPLICATION EXECUTION
@@ -366,6 +409,7 @@ else:
                 
             avg_downtime_per_case = df['Actual Down Time Hours'].mean() if total_cases > 0 else 0
 
+            # Render HTML Metric Pillows
             st.markdown(f"""
             <div class='kpi-container'>
                 <div class='kpi-card'>
@@ -387,74 +431,125 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
+            # --- CALCULATE HOLISTIC METRICS (SUCCESSES & OPPORTUNITIES) ---
             if not df.empty:
+                # 1. Success Metrics
+                # Site with best same-day fix rate (min 5 tickets)
+                if 'Site Name' in df.columns and 'Resolution_Speed' in df.columns:
+                    site_resolutions = df.groupby('Site Name').agg(
+                        Total=('Case Number', 'count'),
+                        Same_Day=('Resolution_Speed', lambda x: (x == 'Same Day').sum())
+                    )
+                    site_resolutions = site_resolutions[site_resolutions['Total'] >= 5]
+                    if not site_resolutions.empty:
+                        site_resolutions['Pct'] = (site_resolutions['Same_Day'] / site_resolutions['Total']) * 100
+                        champion_site = site_resolutions['Pct'].idxmax()
+                        champion_site_pct = site_resolutions['Pct'].max()
+                    else:
+                        champion_site, champion_site_pct = "N/A", 0
+                else:
+                    champion_site, champion_site_pct = "N/A", 0
+
+                # Most Reliable Model (Lowest avg downtime, min 5 tickets)
+                if 'Family/Line: Name' in df.columns:
+                    model_down = df.groupby('Family/Line: Name').agg(
+                        Total=('Case Number', 'count'),
+                        Avg_Down=('Actual Down Time Hours', 'mean')
+                    )
+                    model_down = model_down[model_down['Total'] >= 5]
+                    if not model_down.empty:
+                        reliable_model = model_down['Avg_Down'].idxmin()
+                        reliable_model_hours = model_down['Avg_Down'].min()
+                    else:
+                        reliable_model, reliable_model_hours = "N/A", 0
+                else:
+                    reliable_model, reliable_model_hours = "N/A", 0
+                
+                # Non-Disruptive % (Tickets that didn't cause downtime)
+                non_disruptive_pct = (len(df[df['System Down Yes/No'] == 'Not Down']) / total_cases) * 100 if total_cases > 0 else 0
+
+                # 2. Opportunity/Risk Metrics
                 max_down_idx = df['Actual Down Time Hours'].idxmax()
                 critical_case_number = df.loc[max_down_idx, 'Case Number'] if 'Case Number' in df.columns else "N/A"
                 critical_case_hours = df.loc[max_down_idx, 'Actual Down Time Hours']
                 critical_case_site = df.loc[max_down_idx, 'Site Name']
-                critical_case_model = df.loc[max_down_idx, 'Family/Line: Name'] if 'Family/Line: Name' in df.columns else "N/A"
-                critical_case_hardware_issue = df.loc[max_down_idx, 'Logical Hardware Issue']
                 
                 df_actionable = df[
                     (df['Actual Down Time Hours'] > 0) & 
-                    (~df['Logical Hardware Issue'].isin(['Other Hardware Fault', 'Unknown'])) & 
-                    (~df['Logical Application Issue'].isin(['Other Application Issue', 'Unknown']))
+                    (~df['Logical Hardware Issue'].isin(['Other Hardware Fault', 'Unknown']))
                 ]
-                
-                if not df_actionable.empty:
-                    pointed_top_part = df_actionable['Logical Hardware Issue'].mode()[0]
-                    pointed_top_app = df_actionable['Logical Application Issue'].mode()[0]
-                else:
-                    pointed_top_part, pointed_top_app = "Gripper & Cup Pickup Fault", "Quality Control (QC) Issue"
-                    
-                model_downtime = df.groupby('Family/Line: Name')['Actual Down Time Hours'].sum()
-                leading_friction_model = model_downtime.idxmax() if not model_downtime.empty else "N/A"
+                pointed_top_part = df_actionable['Logical Hardware Issue'].mode()[0] if not df_actionable.empty else "N/A"
                 
                 serial_downtime = df.groupby('Serial No.').agg({'Actual Down Time Hours':'sum', 'Site Name':'first'}).reset_index()
                 if not serial_downtime.empty:
                     critical_idx = serial_downtime['Actual Down Time Hours'].idxmax()
                     critical_impact_serial = serial_downtime.loc[critical_idx, 'Serial No.']
-                    pointed_serial_site = serial_downtime.loc[critical_idx, 'Site Name']
                     pointed_serial_hours = serial_downtime.loc[critical_idx, 'Actual Down Time Hours']
                 else:
-                    critical_impact_serial, pointed_serial_site, pointed_serial_hours = "N/A", "N/A", 0
-                    
-                if 'City' in df.columns:
-                    top_city_series = df['City'].dropna().mode()
-                    pointed_top_city = top_city_series[0] if not top_city_series.empty else "N/A"
-                else:
-                    pointed_top_city = "N/A"
+                    critical_impact_serial, pointed_serial_hours = "N/A", 0
             else:
-                critical_case_number, critical_case_hours, critical_case_site, critical_case_model, critical_case_hardware_issue = "N/A", 0, "N/A", "N/A", "N/A"
-                pointed_top_part, pointed_top_app, leading_friction_model, critical_impact_serial, pointed_serial_site, pointed_serial_hours, pointed_top_city = "N/A", "N/A", "N/A", "N/A", "N/A", 0, "N/A"
+                champion_site, champion_site_pct, reliable_model, reliable_model_hours, non_disruptive_pct = "N/A", 0, "N/A", 0, 0
+                critical_case_number, critical_case_hours, critical_case_site, pointed_top_part, critical_impact_serial, pointed_serial_hours = "N/A", 0, "N/A", "N/A", "N/A", 0
 
-            severe_outliers_count = len(df[df['Actual Down Time Hours'].fillna(0) >= 24.0])
-            env_stress_count = len(df[df['Env_Flag'] == True])
+            # --- INFOGRAPHIC SECTION 1: TRIUMPHS & EFFICIENCY ---
+            st.markdown("<div class='insight-header'>🌟 Fleet Health & Operational Successes</div>", unsafe_allow_html=True)
+            c_good1, c_good2, c_good3 = st.columns(3)
             
-            lemon_assets_count = 0
-            if 'Serial No.' in df.columns and 'Date/Time Opened' in df.columns and not df.empty:
-                ds_check = df.sort_values(['Serial No.', 'Date/Time Opened'])
-                ds_check['Days_Diff'] = ds_check.groupby('Serial No.')['Date/Time Opened'].diff().dt.days
-                lemon_assets_count = len(ds_check[ds_check['Days_Diff'] <= recurring_days]['Serial No.'].unique())
+            with c_good1:
+                st.markdown(f"""
+                <div class='info-card success'>
+                    <div class='info-title'>🏆 Efficiency Champion Site</div>
+                    <div class='info-metric'>{champion_site_pct:.1f}%</div>
+                    <div class='info-desc'><strong>{champion_site}</strong> holds the highest Same-Day Fix rate in the network. Analyze their local parts inventory to replicate this success elsewhere.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_good2:
+                st.markdown(f"""
+                <div class='info-card success'>
+                    <div class='info-title'>⚡ Most Resilient Platform</div>
+                    <div class='info-metric'>{reliable_model_hours:.1f} hrs</div>
+                    <div class='info-desc'>The <strong>{reliable_model}</strong> family demonstrates exceptional reliability, logging the lowest average downtime per incident across the fleet.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_good3:
+                st.markdown(f"""
+                <div class='info-card success'>
+                    <div class='info-title'>🛡️ Non-Disruptive Interventions</div>
+                    <div class='info-metric'>{non_disruptive_pct:.1f}%</div>
+                    <div class='info-desc'>Of all tickets submitted, a significant majority were resolved <strong>without triggering a system hard-down</strong>, maintaining continuous lab throughput.</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            st.markdown("<div class='insight-header'>🏛️ Strategic Command Briefing (Pointed Roche Fleet Metrics)</div>", unsafe_allow_html=True)
+            # --- INFOGRAPHIC SECTION 2: STRATEGIC FOCUS AREAS ---
+            st.markdown("<div class='insight-header'>🎯 Strategic Intervention & Focus Areas</div>", unsafe_allow_html=True)
+            c_bad1, c_bad2, c_bad3 = st.columns(3)
             
-            exp_brief = st.expander("👁️ Review High-Impact Operational Diagnostics & Case Audits", expanded=True)
-            with exp_brief:
-                col_b1, col_b2 = st.columns(2)
-                with col_b1:
-                    st.markdown(f"""
-                    <div class='bullet-point'><strong>🏢 Most Critical Network Friction Event:</strong> Case ID <strong>{critical_case_number}</strong> recorded at <em>{critical_case_site}</em> represents the single largest individual disruption across the network. This case involved a <strong>{critical_case_model}</strong> platform that suffered <strong>{critical_case_hours:.1f} hours</strong> of continuous operational halt driven by <em>{critical_case_hardware_issue}</em>. Use this specific Case ID to audit maintenance backlogs in your enterprise records.</div>
-                    <div class='bullet-point'><strong>⚙️ Actionable Mechanical Problem Group:</strong> Logical rule extraction maps the leading hardware disruption block directly to <strong>{pointed_top_part}</strong> issues. Geographically, the highest frequency of total fleet breakthroughs is concentrated in <strong>{pointed_top_city}</strong>, as illuminated by the breakdown density map. Engineering re-routing and field operations must immediately prioritize these key hubs.</div>
-                    <div class='bullet-point'><strong>🚨 Primary Fleet Friction Platform:</strong> The <strong>{leading_friction_model}</strong> system line is the leading driver of cumulative fleet downtime. Routine support queues are cleared quickly, but overall fleet availability is heavily dictated by this specific architecture.</div>
-                    """, unsafe_allow_html=True)
-                with col_b2:
-                    st.markdown(f"""
-                    <div class='bullet-point'><strong>🍋 Single Highest-Risk Unit (Lemon Detector):</strong> Serial Number <strong>{critical_impact_serial}</strong> located at <em>{pointed_serial_site}</em> has caused a massive network gap of <strong>{pointed_serial_hours:.1f} hours</strong>. Successive dispatches to this asset indicate that field activities are addressing immediate symptoms rather than permanent root causes. This unit requires an immediate factory overhaul.</div>
-                    <div class='bullet-point'><strong>🧪 Dominant Application Bottleneck:</strong> Outside of physical mechanics, <strong>{pointed_top_app}</strong> generates the primary tracking noise. Restoring electrode baseline priming pressures and utilizing deep-clean fluidic flushes will clear up these sweeping assay channel discrepancies.</div>
-                    <div class='bullet-point'><strong>📉 Serious MTTR SLA Violations:</strong> A total of <strong>{severe_outliers_count} high-impact incidents</strong> extended past the critical 24-hour downtime mark, while <strong>{lemon_assets_count} instruments</strong> experienced repeat breakdowns inside the rolling {recurring_days}-day limit. This indicates significant operational drag that directly threatens patient turnaround times (TAT).</div>
-                    """, unsafe_allow_html=True)
+            with c_bad1:
+                st.markdown(f"""
+                <div class='info-card warning'>
+                    <div class='info-title'>🏢 Peak Friction Event</div>
+                    <div class='info-metric'>{critical_case_hours:.1f} hrs</div>
+                    <div class='info-desc'>Case <strong>{critical_case_number}</strong> at <em>{critical_case_site}</em> represents the single longest network halt. Audit this case to identify logistics or training delays.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_bad2:
+                st.markdown(f"""
+                <div class='info-card warning'>
+                    <div class='info-title'>⚙️ Primary Hardware Stressor</div>
+                    <div class='info-metric'>{pointed_top_part}</div>
+                    <div class='info-desc'>Logical mining isolates this component group as the leading cause of hardware-related downtime. Proactive PM replacements are highly recommended.</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c_bad3:
+                st.markdown(f"""
+                <div class='info-card warning'>
+                    <div class='info-title'>🍋 Highest-Risk Asset</div>
+                    <div class='info-metric'>SN: {critical_impact_serial}</div>
+                    <div class='info-desc'>This specific machine has accumulated <strong>{pointed_serial_hours:.1f} total hours</strong> of downtime. Field fixes are treating symptoms; factory overhaul or depot repair is advised.</div>
+                </div>
+                """, unsafe_allow_html=True)
 
+            # Core Visual Layout Matrix with PAN-LOCKED map-based bubble chart
             col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
@@ -478,13 +573,13 @@ else:
                             hover_name='City',
                             hover_data=['Breakdowns'],
                             color_discrete_sequence=[CORP_BLUE],
-                            zoom=3.8,
+                            zoom=3.8,  
                             center={"lat": 22.5, "lon": 79.5}, 
                             title="Citywide Breakdown Density Mapping"
                         )
                         fig_map.update_layout(
                             mapbox_style="open-street-map",
-                            mapbox_bounds={"west": 68, "east": 98, "south": 6, "north": 36},
+                            mapbox_bounds={"west": 68, "east": 98, "south": 6, "north": 36}, 
                             margin=dict(l=5, r=5, t=40, b=5)
                         )
                         st.plotly_chart(fig_map, use_container_width=True, theme="streamlit")
@@ -516,28 +611,6 @@ else:
                     fig_trend.add_trace(go.Scatter(x=daily_df['Opened_Date'], y=daily_df['Down'], mode='lines+markers', name='System Down Halts', line=dict(color=CORP_RED, width=2)))
                     fig_trend.update_layout(title="Temporal Operational Load vs. Critical Failures", xaxis_title="Timeline Calendar", yaxis_title="Ticket Volumetrics", margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_trend, use_container_width=True, theme="streamlit")
-
-            st.markdown("<div class='insight-header'>📋 Actionable Implementation Playbook (Prescriptive CAPA Engine)</div>", unsafe_allow_html=True)
-            col_capa1, col_capa2, col_capa3 = st.columns(3)
-            
-            with col_capa1:
-                st.info(f"""
-                **⚡ IMMEDIATE ESCALATION (0 - 30 Days)**
-                * **Root Cause Incident Audit:** Audit Case ID **{critical_case_number}** directly to determine if on-site spare part availability or technician delay escalated MTTR boundaries.
-                * **Component Targeted Swaps:** Force proactive parts replacement of all **{pointed_top_part}** units showing signs of cyclical wear.
-                """)
-            with col_capa2:
-                st.warning("""
-                **🛠️ TACTICAL STABILIZATION (30 - 60 Days)**
-                * **Tolerance Auditing Checkpoints:** Introduce strict verification checks for Z-axis assemblies and gripper mechanisms during routine service visits.
-                * **Environmental Auditing Mandate:** Require customer facility validation (line conditioners, dedicated UPS logging, HVAC stability) before authorizing replacement parts.
-                """)
-            with col_capa3:
-                st.success(f"""
-                **🔮 STRATEGIC ASSURANCE (60 - 90 Days)**
-                * **Predictive Lifecycle Strategy:** Move from reactive troubleshooting to proactive replacement based on tracked runs for key components.
-                * **Automated Asset Escalation:** Automatically flag units like Serial Number **{critical_impact_serial}** in the dispatch system to ensure subsequent faults route immediately to Tier 2 specialist engineers.
-                """)
 
         # ==========================================
         # TAB 2: FLEET & SITE RELIABILITY MATRIX
@@ -584,14 +657,13 @@ else:
         with tab3:
             st.info("**🤖 Logical Keyword Mapping Matrix:** Subjects broken down systematically using rigorous technical rule sets, mapping top application metrics alongside mechanical hardware failure counts.")
             
-            st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (All Calls Plotted)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (Volume vs. Downtime Threshold)</div>", unsafe_allow_html=True)
             
             if 'Actual Down Time Hours' in df.columns and 'Resolution_Hours' in df.columns and 'Date/Time Opened' in df.columns and not df.empty:
                 plot_df = df.copy()
                 
                 plot_df['Bubble_Size'] = plot_df['Resolution_Hours'].fillna(1).clip(lower=1)
                 
-                # Dynamically assign columns to avoid ValueError if your dataset headers are slightly different
                 h_name = 'Case Number' if 'Case Number' in plot_df.columns else None
                 c_name = 'Type of Complaint' if 'Type of Complaint' in plot_df.columns else None
                 
@@ -618,7 +690,18 @@ else:
                     hover_data=h_data,
                     size_max=45, 
                     opacity=0.6, 
+                    marginal_y="histogram", 
+                    marginal_x="histogram", 
                     color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
+                )
+
+                fig_bubble.add_hline(
+                    y=24, 
+                    line_dash="dot", 
+                    line_color=CORP_RED,
+                    annotation_text="🚨 Critical Impact Boundary (24+ Hrs)", 
+                    annotation_position="top right",
+                    annotation_font_color=CORP_RED
                 )
 
                 fig_bubble.update_traces(
@@ -638,7 +721,7 @@ else:
                 )
 
                 fig_bubble.add_annotation(
-                    text="<b>Insight:</b> Every individual call is plotted. <b>Higher placement</b> = Severe Downtime. <b>Larger Bubble</b> = Longer Resolution Time.",
+                    text="<b>Insight:</b> Top/Right bar charts display the <b>Volume of incidents</b>. Scatter maps the <b>Downtime Impact vs Timeline</b>.",
                     xref="paper", yref="paper", x=0.5, y=-0.25, showarrow=False,
                     font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
                     bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
