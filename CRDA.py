@@ -285,15 +285,6 @@ def load_and_clean_data(file_bytes, file_name):
         
         df['Days_to_Resolve'] = (df['Labour End Date'].dt.date - df['Date/Time Opened'].dt.date).apply(lambda x: x.days if pd.notnull(x) else np.nan)
         df['Resolution_Speed'] = df['Days_to_Resolve'].apply(lambda d: "Unknown" if pd.isnull(d) else ("Same Day" if d == 0 else "Next Day" if d == 1 else "Days Later"))
-        
-        def categorize_time(hours):
-            if pd.isnull(hours): return "Unknown"
-            if hours <= 24: return "< 24 Hours"
-            elif hours <= 48: return "24 - 48 Hours"
-            elif hours <= 72: return "48 - 72 Hours"
-            elif hours <= 96: return "72 - 96 Hours"
-            else: return "> 96 Hours"
-        df['Resolution Bucket'] = df['Resolution_Hours'].apply(categorize_time)
 
     if 'Actual Down Time' in df.columns:
         df['Actual Down Time Hours'] = pd.to_timedelta(df['Actual Down Time'].astype(str), errors='coerce').dt.total_seconds() / 3600
@@ -302,6 +293,7 @@ def load_and_clean_data(file_bytes, file_name):
         df['Actual Down Time Hours'] = 0
 
     return df
+
 
 # ==========================================
 # 4. CONDITIONAL APPLICATION EXECUTION
@@ -592,30 +584,38 @@ else:
         with tab3:
             st.info("**🤖 Logical Keyword Mapping Matrix:** Subjects broken down systematically using rigorous technical rule sets, mapping top application metrics alongside mechanical hardware failure counts.")
             
-            # --- NEW: INDIVIDUAL INCIDENT IMPACT BUBBLE CHART ---
             st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (All Calls Plotted)</div>", unsafe_allow_html=True)
             
-            if 'Actual Down Time Hours' in df.columns and 'Resolution_Hours' in df.columns and not df.empty:
+            if 'Actual Down Time Hours' in df.columns and 'Resolution_Hours' in df.columns and 'Date/Time Opened' in df.columns and not df.empty:
                 plot_df = df.copy()
                 
-                # To prevent Plotly scaling errors with 0 or NaN resolution times, we set a minimum bubble size of 1
                 plot_df['Bubble_Size'] = plot_df['Resolution_Hours'].fillna(1).clip(lower=1)
                 
+                # Dynamically assign columns to avoid ValueError if your dataset headers are slightly different
+                h_name = 'Case Number' if 'Case Number' in plot_df.columns else None
+                c_name = 'Type of Complaint' if 'Type of Complaint' in plot_df.columns else None
+                
+                h_data = {
+                    "Resolution_Hours": ':.1f',
+                    "Actual Down Time Hours": ':.1f',
+                    "Bubble_Size": False
+                }
+                
+                if 'Site Name' in plot_df.columns:
+                    h_data['Site Name'] = True
+                if 'Logical Hardware Issue' in plot_df.columns:
+                    h_data['Logical Hardware Issue'] = True
+                if 'Date/Time Opened' in plot_df.columns:
+                    h_data['Date/Time Opened'] = "|%b %d, %Y"
+
                 fig_bubble = px.scatter(
                     plot_df,
-                    x="Date/Time Opened",       # Spread calls out chronologically on the X-axis
-                    y="Actual Down Time Hours", # High on Y-axis = massive system downtime
-                    size="Bubble_Size",         # Larger bubble = took a long time to resolve
-                    color="Type of Complaint",
-                    hover_name="Case Number",
-                    hover_data={
-                        "Site Name": True,
-                        "Failed Component": True,
-                        "Resolution_Hours": ':.1f',
-                        "Actual Down Time Hours": ':.1f',
-                        "Bubble_Size": False,
-                        "Date/Time Opened": "|%b %d, %Y"
-                    },
+                    x="Date/Time Opened",       
+                    y="Actual Down Time Hours", 
+                    size="Bubble_Size",         
+                    color=c_name,
+                    hover_name=h_name,
+                    hover_data=h_data,
                     size_max=45, 
                     opacity=0.6, 
                     color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
