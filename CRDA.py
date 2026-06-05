@@ -99,6 +99,24 @@ st.markdown("""
         line-height: 1.4;
         opacity: 0.85;
     }
+    .zone-pill {
+        text-align: center; 
+        padding: 15px; 
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    .zone-pct {
+        font-size: 2rem; 
+        font-weight: 900; 
+        margin: 0;
+    }
+    .zone-label {
+        margin: 0; 
+        font-size: 0.9rem; 
+        font-weight: 700; 
+        text-transform: uppercase;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,7 +261,6 @@ def load_and_clean_data(file_bytes, file_name):
         
     df.columns = df.columns.str.strip()
     
-    # NEW LOGIC: Strip the redundant "Account Name" and only keep the City/Region
     if 'City' in df.columns:
         df['Site Name'] = df['City'].fillna('Unknown Location').astype(str)
     else:
@@ -698,19 +715,36 @@ else:
                     showlegend=True,
                     legend_title_text="Complaint Origin",
                     plot_bgcolor='rgba(248, 249, 250, 1)',
-                    margin=dict(l=20, r=20, t=40, b=20),
+                    height=600,
+                    margin=dict(l=20, r=20, t=40, b=120),
                     xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)'),
                     yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)')
                 )
 
                 fig_bubble.add_annotation(
                     text="<b>Insight:</b> Timeline of incidents split by Impact Zones. <b>Higher placement</b> = Severe Downtime. <b>Larger Bubble</b> = Longer Resolution Time.",
-                    xref="paper", yref="paper", x=0.5, y=-0.25, showarrow=False,
+                    xref="paper", yref="paper", x=0.5, y=-0.18, showarrow=False,
                     font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
                     bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
                 )
 
                 st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
+                
+                total_plotted = len(plot_df)
+                if total_plotted > 0:
+                    pct_0_24 = len(plot_df[(plot_df['Actual Down Time Hours'] >= 0) & (plot_df['Actual Down Time Hours'] <= 24)]) / total_plotted * 100
+                    pct_24_48 = len(plot_df[(plot_df['Actual Down Time Hours'] > 24) & (plot_df['Actual Down Time Hours'] <= 48)]) / total_plotted * 100
+                    pct_48_96 = len(plot_df[(plot_df['Actual Down Time Hours'] > 48) & (plot_df['Actual Down Time Hours'] <= 96)]) / total_plotted * 100
+                    pct_96_plus = len(plot_df[plot_df['Actual Down Time Hours'] > 96]) / total_plotted * 100
+                else:
+                    pct_0_24 = pct_24_48 = pct_48_96 = pct_96_plus = 0
+
+                cz1, cz2, cz3, cz4 = st.columns(4)
+                cz1.markdown(f"<div class='zone-pill' style='background-color: rgba(89, 161, 79, 0.1); border: 1px solid #59A14F;'><h3 class='zone-pct' style='color:#59A14F;'>{pct_0_24:.1f}%</h3><p class='zone-label'>0-24 Hrs (SLA Met)</p></div>", unsafe_allow_html=True)
+                cz2.markdown(f"<div class='zone-pill' style='background-color: rgba(242, 142, 43, 0.1); border: 1px solid #F28E2B;'><h3 class='zone-pct' style='color:#F28E2B;'>{pct_24_48:.1f}%</h3><p class='zone-label'>24-48 Hrs (Elevated)</p></div>", unsafe_allow_html=True)
+                cz3.markdown(f"<div class='zone-pill' style='background-color: rgba(225, 87, 89, 0.1); border: 1px solid #E15759;'><h3 class='zone-pct' style='color:#E15759;'>{pct_48_96:.1f}%</h3><p class='zone-label'>48-96 Hrs (Severe)</p></div>", unsafe_allow_html=True)
+                cz4.markdown(f"<div class='zone-pill' style='background-color: rgba(139, 0, 0, 0.1); border: 1px solid #8B0000;'><h3 class='zone-pct' style='color:#8B0000;'>{pct_96_plus:.1f}%</h3><p class='zone-label'>>96 Hrs (Critical)</p></div>", unsafe_allow_html=True)
+
             else:
                 st.warning("Insufficient data keys to generate the Incident Scatter matrix.")
 
