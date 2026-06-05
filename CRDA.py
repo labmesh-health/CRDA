@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inject Custom SaaS-style CSS for KPIs and Infographics
+# Inject Custom SaaS-style CSS supporting dynamic light/dark theme inheritance
 st.markdown("""
 <style>
     .kpi-container {
@@ -55,12 +55,13 @@ st.markdown("""
         font-size: 1.3rem;
         font-weight: 700;
         margin-top: 15px;
-        margin-bottom: 15px;
+        margin-bottom: 10px;
         color: #4E79A7;
-        border-bottom: 2px solid #e0e0e0;
-        padding-bottom: 5px;
     }
-    /* Infographic Cards CSS */
+    .bullet-point {
+        margin-bottom: 12px;
+        line-height: 1.6;
+    }
     .info-card {
         border-radius: 10px;
         padding: 20px;
@@ -108,7 +109,6 @@ CORP_BLUE = '#4E79A7'
 CORP_RED = '#E15759'
 CORP_TEAL = '#76B7B2'
 CORP_ORANGE = '#F28E2B'
-CORP_GREEN = '#59A14F'
 SAFE_PALETTE = px.colors.qualitative.Safe
 
 # ==========================================
@@ -217,7 +217,6 @@ def load_and_clean_data(file_bytes, file_name):
     file_object = io.BytesIO(file_bytes)
     file_ext = file_name.split('.')[-1].lower()
     
-    # Structural File Parsing
     try:
         if file_ext == 'csv':
             file_object.seek(0)
@@ -244,13 +243,12 @@ def load_and_clean_data(file_bytes, file_name):
         
     df.columns = df.columns.str.strip()
     
-    # Location Hierarchy Consolidation
-    if 'Account Name' in df.columns and 'City' in df.columns:
-        df['Site Name'] = df['Account Name'].astype(str) + " (" + df['City'].astype(str) + ")"
+    # NEW LOGIC: Strip the redundant "Account Name" and only keep the City/Region
+    if 'City' in df.columns:
+        df['Site Name'] = df['City'].fillna('Unknown Location').astype(str)
     else:
         df['Site Name'] = df.get('Account Name', 'Unknown Site')
 
-    # Operational State Standardization
     if 'System Down Yes/No' in df.columns:
         df['System Down Yes/No'] = df['System Down Yes/No'].fillna('Not Down').apply(
             lambda x: 'Down' if 'yes' in str(x).lower() or 'down' in str(x).lower() else 'Not Down'
@@ -261,7 +259,6 @@ def load_and_clean_data(file_bytes, file_name):
     if 'Subject' in df.columns:
         df['Subject_Clean'] = df['Subject'].fillna('').astype(str).str.lower()
         
-        # Mapping Technical Sub-Domains
         def categorize_hardware(text):
             if any(w in text for w in ['gripper', 'axis', 'movement', 'rack', 'motor', 'actuator', 'l2 line', 'feeder', 'cup pick up', '18-05-01']): 
                 return 'Kinematic / Robotic'
@@ -276,7 +273,6 @@ def load_and_clean_data(file_bytes, file_name):
         df['Hardware Sub-Domain'] = df['Subject_Clean'].apply(categorize_hardware)
         df['Env_Flag'] = df['Hardware Sub-Domain'] == 'Environmental / Power'
         
-        # Pure Logical Keyword Rule Bucket for APPLICATION-specific issues
         def logical_application_bucket(text):
             if any(w in text for w in ['qc', 'outlier', 'eqa', 'iqc', 'control variation', 'variation']): 
                 return 'Quality Control (QC) Issue'
@@ -291,7 +287,6 @@ def load_and_clean_data(file_bytes, file_name):
             return 'Other Application Issue'
         df['Logical Application Issue'] = df['Subject_Clean'].apply(logical_application_bucket)
 
-        # Pure Logical Keyword Rule Bucket for HARDWARE-specific issues
         def logical_hardware_bucket(text):
             if any(w in text for w in ['gripper', 'cup pick', 'pickup', '18-05-01', '300-000028', 'waste mechanism', 'magazine']): 
                 return 'Gripper & Cup Pickup Fault'
@@ -313,7 +308,6 @@ def load_and_clean_data(file_bytes, file_name):
         df['Logical Application Issue'] = 'Unknown'
         df['Logical Hardware Issue'] = 'Unknown'
 
-    # Service Timeline Engineering
     for col in ['Date/Time Opened', 'Labour Start Date', 'Labour End Date']:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce', format='mixed')
@@ -409,7 +403,6 @@ else:
                 
             avg_downtime_per_case = df['Actual Down Time Hours'].mean() if total_cases > 0 else 0
 
-            # Render HTML Metric Pillows
             st.markdown(f"""
             <div class='kpi-container'>
                 <div class='kpi-card'>
@@ -431,10 +424,7 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # --- CALCULATE HOLISTIC METRICS (SUCCESSES & OPPORTUNITIES) ---
             if not df.empty:
-                # 1. Success Metrics
-                # Site with best same-day fix rate (min 5 tickets)
                 if 'Site Name' in df.columns and 'Resolution_Speed' in df.columns:
                     site_resolutions = df.groupby('Site Name').agg(
                         Total=('Case Number', 'count'),
@@ -450,7 +440,6 @@ else:
                 else:
                     champion_site, champion_site_pct = "N/A", 0
 
-                # Most Reliable Model (Lowest avg downtime, min 5 tickets)
                 if 'Family/Line: Name' in df.columns:
                     model_down = df.groupby('Family/Line: Name').agg(
                         Total=('Case Number', 'count'),
@@ -465,10 +454,8 @@ else:
                 else:
                     reliable_model, reliable_model_hours = "N/A", 0
                 
-                # Non-Disruptive % (Tickets that didn't cause downtime)
                 non_disruptive_pct = (len(df[df['System Down Yes/No'] == 'Not Down']) / total_cases) * 100 if total_cases > 0 else 0
 
-                # 2. Opportunity/Risk Metrics
                 max_down_idx = df['Actual Down Time Hours'].idxmax()
                 critical_case_number = df.loc[max_down_idx, 'Case Number'] if 'Case Number' in df.columns else "N/A"
                 critical_case_hours = df.loc[max_down_idx, 'Actual Down Time Hours']
@@ -491,7 +478,6 @@ else:
                 champion_site, champion_site_pct, reliable_model, reliable_model_hours, non_disruptive_pct = "N/A", 0, "N/A", 0, 0
                 critical_case_number, critical_case_hours, critical_case_site, pointed_top_part, critical_impact_serial, pointed_serial_hours = "N/A", 0, "N/A", "N/A", "N/A", 0
 
-            # --- INFOGRAPHIC SECTION 1: TRIUMPHS & EFFICIENCY ---
             st.markdown("<div class='insight-header'>🌟 Fleet Health & Operational Successes</div>", unsafe_allow_html=True)
             c_good1, c_good2, c_good3 = st.columns(3)
             
@@ -520,7 +506,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # --- INFOGRAPHIC SECTION 2: STRATEGIC FOCUS AREAS ---
             st.markdown("<div class='insight-header'>🎯 Strategic Intervention & Focus Areas</div>", unsafe_allow_html=True)
             c_bad1, c_bad2, c_bad3 = st.columns(3)
             
@@ -549,7 +534,6 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Core Visual Layout Matrix with PAN-LOCKED map-based bubble chart
             col_g1, col_g2, col_g3 = st.columns([1.5, 1.1, 1.4])
             
             with col_g1:
@@ -657,7 +641,7 @@ else:
         with tab3:
             st.info("**🤖 Logical Keyword Mapping Matrix:** Subjects broken down systematically using rigorous technical rule sets, mapping top application metrics alongside mechanical hardware failure counts.")
             
-            st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (Volume vs. Downtime Threshold)</div>", unsafe_allow_html=True)
+            st.markdown("<div class='insight-header'>🫧 Individual Incident Impact Matrix (Zone Segmentation)</div>", unsafe_allow_html=True)
             
             if 'Actual Down Time Hours' in df.columns and 'Resolution_Hours' in df.columns and 'Date/Time Opened' in df.columns and not df.empty:
                 plot_df = df.copy()
@@ -689,20 +673,19 @@ else:
                     hover_name=h_name,
                     hover_data=h_data,
                     size_max=45, 
-                    opacity=0.6, 
-                    marginal_y="histogram", 
-                    marginal_x="histogram", 
+                    opacity=0.7, 
                     color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
                 )
 
-                fig_bubble.add_hline(
-                    y=24, 
-                    line_dash="dot", 
-                    line_color=CORP_RED,
-                    annotation_text="🚨 Critical Impact Boundary (24+ Hrs)", 
-                    annotation_position="top right",
-                    annotation_font_color=CORP_RED
-                )
+                fig_bubble.add_hrect(y0=0, y1=24, fillcolor="#59A14F", opacity=0.1, layer="below", line_width=0, annotation_text="0-24 Hrs (SLA Met)", annotation_position="top right", annotation_font_color="#59A14F")
+                fig_bubble.add_hrect(y0=24, y1=48, fillcolor="#F28E2B", opacity=0.1, layer="below", line_width=0, annotation_text="24-48 Hrs (Elevated)", annotation_position="top right", annotation_font_color="#F28E2B")
+                fig_bubble.add_hrect(y0=48, y1=96, fillcolor="#E15759", opacity=0.1, layer="below", line_width=0, annotation_text="48-96 Hrs (Severe)", annotation_position="top right", annotation_font_color="#E15759")
+                
+                max_downtime = plot_df["Actual Down Time Hours"].max()
+                if max_downtime > 96:
+                    fig_bubble.add_hrect(y0=96, y1=max_downtime * 1.1, fillcolor="#8B0000", opacity=0.15, layer="below", line_width=0, annotation_text=">96 Hrs (Critical)", annotation_position="top right", annotation_font_color="#8B0000")
+                else:
+                    fig_bubble.add_hrect(y0=96, y1=120, fillcolor="#8B0000", opacity=0.15, layer="below", line_width=0, annotation_text=">96 Hrs (Critical)", annotation_position="top right", annotation_font_color="#8B0000")
 
                 fig_bubble.update_traces(
                     marker=dict(line=dict(width=1, color='White'))
@@ -721,7 +704,7 @@ else:
                 )
 
                 fig_bubble.add_annotation(
-                    text="<b>Insight:</b> Top/Right bar charts display the <b>Volume of incidents</b>. Scatter maps the <b>Downtime Impact vs Timeline</b>.",
+                    text="<b>Insight:</b> Timeline of incidents split by Impact Zones. <b>Higher placement</b> = Severe Downtime. <b>Larger Bubble</b> = Longer Resolution Time.",
                     xref="paper", yref="paper", x=0.5, y=-0.25, showarrow=False,
                     font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
                     bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
