@@ -394,11 +394,13 @@ else:
 
         df = df_filtered
 
-        tab1, tab2, tab3, tab4 = st.tabs([
+        # Structural Layout Tab Definitions Added Tab 5
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 1. Strategic Command Center", 
             "🏭 2. Fleet & Site Reliability Matrix", 
             "🔍 3. Root Cause Analytics (RCA)",
-            "🚨 4. Operational Risk & Outliers"
+            "🚨 4. Operational Risk & Outliers",
+            "📈 5. Temporal Trending"
         ])
 
         # ==========================================
@@ -631,6 +633,19 @@ else:
                     fig_fam.update_layout(title="Product Line Vulnerability Pareto Model", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), showlegend=False, xaxis_tickangle=-35)
                     st.plotly_chart(fig_fam, use_container_width=True, theme="streamlit")
 
+                    top_fam_name = fam_counts.iloc[0]['Family/Line: Name']
+                    top_fam_count = fam_counts.iloc[0]['Complaints']
+                    top_3_pct = fam_counts.head(3)['Complaints'].sum() / fam_counts['Complaints'].sum() * 100 if len(fam_counts) >= 3 else 100
+                    
+                    st.markdown(f"""
+                    <div style='background-color: rgba(78, 121, 167, 0.1); border-left: 4px solid {CORP_BLUE}; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9rem;'>
+                        <strong>Quick Insights:</strong><br>
+                        • The <strong>{top_fam_name}</strong> system is the leading driver of fleet incidents ({top_fam_count} cases).<br>
+                        • The top 3 platforms alone contribute to <strong>{top_3_pct:.1f}%</strong> of the represented volume.<br>
+                        • <em>Action:</em> Target specialized PM protocols and training refreshers specifically for these leading platforms.
+                    </div>
+                    """, unsafe_allow_html=True)
+
             with col_p2:
                 if 'Site Name' in df.columns and 'Type of Complaint' in df.columns and not df.empty:
                     hw_df = df[df['Type of Complaint'].str.contains('Hardware', case=False, na=False)]
@@ -645,6 +660,19 @@ else:
                         fig_site.add_trace(go.Scatter(x=site_df['Site Display'], y=site_df['Cum%'], yaxis='y2', line=dict(color=CORP_RED, width=2.5), name="Cumulative Base %"))
                         fig_site.update_layout(title="Top Critical Sites Pareto (⚠️ = Environmental Footprint Risk)", yaxis2=dict(overlaying='y', side='right', range=[0, 115]), showlegend=False, xaxis_tickangle=-45)
                         st.plotly_chart(fig_site, use_container_width=True, theme="streamlit")
+
+                        top_site_name = site_df.iloc[0]['Site Name']
+                        top_site_count = site_df.iloc[0]['Complaints']
+                        env_risk_text = "exhibits environmental footprint risks (⚠️)" if top_site_name in env_sites else "is the primary friction node"
+                        
+                        st.markdown(f"""
+                        <div style='background-color: rgba(225, 87, 89, 0.1); border-left: 4px solid {CORP_RED}; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 0.9rem;'>
+                            <strong>Quick Insights:</strong><br>
+                            • <strong>{top_site_name}</strong> {env_risk_text}, logging <strong>{top_site_count}</strong> critical hardware failures.<br>
+                            • High density in top sites confirms that failure rates are heavily localized rather than evenly distributed.<br>
+                            • <em>Action:</em> Dispatch senior site-reliability engineers to audit the physical and environmental infrastructure of the top nodes.
+                        </div>
+                        """, unsafe_allow_html=True)
 
             if 'City' in df.columns and 'Family/Line: Name' in df.columns and not df.empty:
                 city_df = df.groupby(['City', 'Family/Line: Name']).size().reset_index(name='Total')
@@ -681,6 +709,7 @@ else:
                 if 'Date/Time Opened' in plot_df.columns:
                     h_data['Date/Time Opened'] = "|%b %d, %Y"
 
+                # REMOVED marginal_x and marginal_y here to clean up the chart.
                 fig_bubble = px.scatter(
                     plot_df,
                     x="Date/Time Opened",       
@@ -690,9 +719,7 @@ else:
                     hover_name=h_name,
                     hover_data=h_data,
                     size_max=45, 
-                    opacity=0.7, 
-                    marginal_y="histogram", 
-                    marginal_x="histogram", 
+                    opacity=0.7,
                     color_discrete_sequence=[CORP_ORANGE, CORP_BLUE, CORP_TEAL, '#B0B0B0']
                 )
 
@@ -717,17 +744,10 @@ else:
                     showlegend=True,
                     legend_title_text="Complaint Origin",
                     plot_bgcolor='rgba(248, 249, 250, 1)',
-                    height=600,
-                    margin=dict(l=20, r=20, t=40, b=180),
+                    height=500,
+                    margin=dict(l=20, r=20, t=40, b=80),
                     xaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)'),
                     yaxis=dict(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.5)', zeroline=True, zerolinecolor='rgba(150,150,150,0.8)')
-                )
-
-                fig_bubble.add_annotation(
-                    text="<b>Insight:</b> Top/Right bar charts display the <b>Volume of incidents</b>. Scatter maps the <b>Downtime Impact vs Timeline</b>.",
-                    xref="paper", yref="paper", x=0.5, y=-0.32, showarrow=False,
-                    font=dict(size=13, color="#4E79A7"), bgcolor="rgba(242, 142, 43, 0.1)",
-                    bordercolor=CORP_ORANGE, borderwidth=1, borderpad=8
                 )
 
                 st.plotly_chart(fig_bubble, use_container_width=True, theme="streamlit")
@@ -858,3 +878,73 @@ else:
                     st.warning("No data points trace back cleanly to match parameters.")
             else:
                 st.warning("Missing database keys required to compile the fleet tracking matrix layout.")
+
+        # ==========================================
+        # TAB 5: TEMPORAL TRENDING
+        # ==========================================
+        with tab5:
+            st.info("**📈 Temporal Trending:** Month-over-month trajectory of fleet service incidents broken down by Complaint Category, Geographic Region, and Product Line.")
+            
+            if 'Date/Time Opened' in df.columns and not df.empty:
+                trend_df = df.copy()
+                trend_df['Month_DT'] = trend_df['Date/Time Opened'].dt.to_period('M').dt.to_timestamp()
+                
+                # 1. Overall Trend by Type of Complaint
+                if 'Type of Complaint' in trend_df.columns:
+                    trend_type = trend_df.groupby(['Month_DT', 'Type of Complaint']).size().reset_index(name='Cases')
+                    fig_trend_type = px.line(
+                        trend_type, x='Month_DT', y='Cases', color='Type of Complaint', markers=True,
+                        title="Complaint Category Trajectory (Month-over-Month)",
+                        color_discrete_sequence=[CORP_TEAL, CORP_ORANGE, CORP_BLUE, '#B0B0B0']
+                    )
+                    fig_trend_type.update_traces(line=dict(width=3), marker=dict(size=8))
+                    fig_trend_type.update_layout(
+                        xaxis_title="Month", yaxis_title="Incident Count", 
+                        plot_bgcolor='rgba(248, 249, 250, 1)',
+                        xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)'),
+                        yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)')
+                    )
+                    st.plotly_chart(fig_trend_type, use_container_width=True, theme="streamlit")
+                    
+                col_t1, col_t2 = st.columns(2)
+                
+                with col_t1:
+                    # 2. Trend by Region
+                    if 'Region' in trend_df.columns:
+                        trend_region = trend_df.groupby(['Month_DT', 'Region']).size().reset_index(name='Cases')
+                        fig_trend_reg = px.line(
+                            trend_region, x='Month_DT', y='Cases', color='Region', markers=True,
+                            title="Regional Volume Trajectory",
+                            color_discrete_sequence=SAFE_PALETTE
+                        )
+                        fig_trend_reg.update_traces(line=dict(width=2), marker=dict(size=6))
+                        fig_trend_reg.update_layout(
+                            xaxis_title="Month", yaxis_title="Incident Count",
+                            plot_bgcolor='rgba(248, 249, 250, 1)',
+                            xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)'),
+                            yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)')
+                        )
+                        st.plotly_chart(fig_trend_reg, use_container_width=True, theme="streamlit")
+                
+                with col_t2:
+                    # 3. Trend by Product Line
+                    if 'Family/Line: Name' in trend_df.columns:
+                        top_5_prods = trend_df['Family/Line: Name'].value_counts().nlargest(5).index
+                        prod_df = trend_df[trend_df['Family/Line: Name'].isin(top_5_prods)]
+                        trend_prod = prod_df.groupby(['Month_DT', 'Family/Line: Name']).size().reset_index(name='Cases')
+                        
+                        fig_trend_prod = px.line(
+                            trend_prod, x='Month_DT', y='Cases', color='Family/Line: Name', markers=True,
+                            title="Top 5 Product Lines Trajectory",
+                            color_discrete_sequence=px.colors.qualitative.Set2
+                        )
+                        fig_trend_prod.update_traces(line=dict(width=2), marker=dict(size=6))
+                        fig_trend_prod.update_layout(
+                            xaxis_title="Month", yaxis_title="Incident Count",
+                            plot_bgcolor='rgba(248, 249, 250, 1)',
+                            xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)'),
+                            yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.5)')
+                        )
+                        st.plotly_chart(fig_trend_prod, use_container_width=True, theme="streamlit")
+            else:
+                st.warning("Temporal data not available for trending analysis.")
